@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from app.core.config import get_settings
 from app.api.routers import health, inference
+from app.api.routers import stream, cameras
 
 
 def create_app() -> FastAPI:
@@ -34,6 +35,10 @@ def create_app() -> FastAPI:
 
     # Rutas de inferencia del modelo de machine learning
     app.include_router(inference.router)
+
+    # Gestión de cámaras (REST) y streaming en tiempo real (WebSocket)
+    app.include_router(cameras.router)
+    app.include_router(stream.router)
 
     return app
 

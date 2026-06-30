@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     model_name: str = "model.pkl"
     model_version: str = "1.0.0"
 
+    # Streaming y cámaras
+    jpeg_quality: int = 70
+    ws_max_queue_size: int = 5
+    max_cameras: int = 4
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
