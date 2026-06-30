@@ -7,6 +7,7 @@ Protocolo binario por mensaje:
 El primer mensaje siempre es JSON de texto con el estado de conexión.
 Si no hay cámara disponible se envía {"connected": false, ...} y se cierra
 la conexión con código 1000 (cierre normal).
+Test del websocket con ws://127.0.0.1:8000/ws/stream?camera_id=0
 """
 
 from __future__ import annotations
