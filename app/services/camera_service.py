@@ -8,7 +8,6 @@ de streaming de la fuente de video concreta (USB, RTSP, archivo).
 from __future__ import annotations
 
 import json
-import platform
 import struct
 import time
 from abc import ABC, abstractmethod
@@ -17,8 +16,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-# DirectShow es más estable en Windows; en Linux/macOS se usa el backend por defecto.
-_BACKEND = cv2.CAP_DSHOW if platform.system() == "Windows" else cv2.CAP_ANY
+_BACKEND = cv2.CAP_ANY
 
 
 class CameraCapture(ABC):

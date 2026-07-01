@@ -76,33 +76,33 @@ async def stream_camera(
         None, open_camera, camera_id
     )
 
-    if camera is None:
+    try:
+        if camera is None:
+            await websocket.send_json(
+                {
+                    "connected": False,
+                    "camera_id": camera_id,
+                    "description": (
+                        f"No se detectó ninguna cámara en el dispositivo "
+                        f"(fuente: '{camera_id}'). "
+                        "Verifique que la cámara esté conectada y no esté "
+                        "siendo usada por otra aplicación."
+                    ),
+                }
+            )
+            await websocket.close(code=1000)
+            return
+
         await websocket.send_json(
             {
-                "connected": False,
+                "connected": True,
                 "camera_id": camera_id,
-                "description": (
-                    f"No se detectó ninguna cámara en el dispositivo "
-                    f"(fuente: '{camera_id}'). "
-                    "Verifique que la cámara esté conectada y no esté "
-                    "siendo usada por otra aplicación."
-                ),
+                "description": "Cámara detectada. Iniciando transmisión de video.",
             }
         )
-        await websocket.close(code=1000)
-        return
 
-    await websocket.send_json(
-        {
-            "connected": True,
-            "camera_id": camera_id,
-            "description": "Cámara detectada. Iniciando transmisión de video.",
-        }
-    )
+        fps_tracker = _FPSTracker()
 
-    fps_tracker = _FPSTracker()
-
-    try:
         while True:
             t0 = time.monotonic()
 
@@ -146,4 +146,5 @@ async def stream_camera(
     except Exception:
         await websocket.close(code=1011)
     finally:
-        await loop.run_in_executor(None, camera.release)
+        if camera is not None:
+            await loop.run_in_executor(None, camera.release)

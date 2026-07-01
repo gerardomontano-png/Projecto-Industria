@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.services.camera_service import detect_available_cameras
 
-router = APIRouter(prefix="/api", tags=["cameras"])
+router = APIRouter(tags=["cameras"])
 
 
 @router.get(
