@@ -23,6 +23,7 @@ class LocalizationResponse(BaseModel):
     image_width: int
     image_height: int
     roi: list[int] | None = None
+    roi_points: list[int] | None = None
     detections: list[Detection]
 
 
@@ -36,6 +37,7 @@ class ClassificationResponse(BaseModel):
     task: str = "classification"
     model_id: str
     roi: list[int] | None = None
+    roi_points: list[int] | None = None
     predictions: list[ClassificationItem]
 
 
@@ -49,6 +51,7 @@ class OCRResponse(BaseModel):
     task: str = "ocr"
     model_id: str
     roi: list[int] | None = None
+    roi_points: list[int] | None = None
     results: list[OCRItem]
 
 
@@ -62,6 +65,7 @@ class AnomalyResponse(BaseModel):
     task: str = "anomaly"
     model_id: str
     roi: list[int] | None = None
+    roi_points: list[int] | None = None
     anomaly_score: float
     regions: list[AnomalyRegion]
 
