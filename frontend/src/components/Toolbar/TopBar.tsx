@@ -21,9 +21,7 @@ export function TopBar({ title, status, cameraName, rightSlot }: TopBarProps) {
 
   return (
     <header
-      className="flex h-14 shrink-0 items-center gap-4 border-b border-[#e2e5ea] bg-white px-5"
-      role="banner"
-    >
+      className="flex h-14 shrink-0 items-center gap-4 border-b border-[#e2e5ea] bg-white px-5" role="banner">
       <ConnectionStatusBadge status={resolvedStatus} cameraName={resolvedCameraName} />
 
       <h1 className="m-0! text-[15px]! font-semibold! tracking-normal! text-[#1f2430]! flex-1 text-center">

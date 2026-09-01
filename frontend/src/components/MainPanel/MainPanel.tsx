@@ -78,7 +78,7 @@ function apiModelToModel(m: ApiModel): Model {
 }
 
 const SELECT_CLASS =
-  'shrink-0 h-8 px-2 rounded-lg border border-[#e2e5ea] bg-white text-[13px] text-[#1f2430] cursor-pointer focus:outline-[2px] focus:outline-[#2f6fe4] focus:outline-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
+  'shrink-0 h-8 px-2 rounded-lg border border-[#e2e5ea] bg-white text-[13px] text-[#393939] cursor-pointer focus:outline-[2px] focus:outline-[#2f6fe4] focus:outline-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
 
 function MainPanel() {
   const [selectedCameraId, setSelectedCameraId] = useState('0');
@@ -163,52 +163,7 @@ function MainPanel() {
   };
 
   return (
-    <div className="font-inter flex flex-col h-full w-full bg-[#f5f6f8] text-[#1f2430]">
-      <TopBar
-        title={`Panel principal — ${camera.name}`}
-        status={camera.status}
-        cameraName={camera.name}
-        rightSlot={
-          <>
-            <select
-              value={effectiveModelId}
-              onChange={(e) => handleModelChange(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Seleccionar modelo"
-              disabled={isLoadingModels}
-            >
-              {models.length > 0 ? (
-                models.map((m) => (
-                  <option key={m.id} value={m.id} disabled={!m.available || !m.enabled}>
-                    {TASK_LABELS[m.task] ?? m.task} — {m.id}
-                    {m.default ? ' ★' : ''}
-                  </option>
-                ))
-              ) : (
-                <option value="">{isLoadingModels ? 'Cargando…' : 'Sin modelos'}</option>
-              )}
-            </select>
-
-            <select
-              value={selectedCameraId}
-              onChange={(e) => handleCameraChange(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Seleccionar cámara"
-            >
-              {apiCameras.length > 0 ? (
-                apiCameras.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Cámara {c.id}
-                  </option>
-                ))
-              ) : (
-                <option value="0">{FALLBACK_CAMERA.name}</option>
-              )}
-            </select>
-          </>
-        }
-      />
-
+    <div className="font-inter flex flex-col h-full w-full bg-[#FAF9F9] noise-[178,100,5] text-[#393939]">
       {noCamerasDetected && (
         <p className="mx-4 mt-3 rounded-lg bg-[rgba(224,160,32,0.12)] px-3 py-2 text-[13px] font-medium text-[#8a6410]">
           {camerasMessage}
@@ -223,6 +178,14 @@ function MainPanel() {
           rois={mockRois}
           job={job}
           onToggleInspection={toggleInspection}
+          // Props nuevas:
+          models={models}
+          isLoadingModels={isLoadingModels}
+          effectiveModelId={effectiveModelId}
+          onModelChange={handleModelChange}
+          selectedCameraId={selectedCameraId}
+          apiCameras={apiCameras}
+          onCameraChange={handleCameraChange}
         />
         <ResultsHistoryPanel results={mockResults} />
       </div>

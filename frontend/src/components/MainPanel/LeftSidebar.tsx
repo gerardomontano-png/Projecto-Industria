@@ -1,51 +1,113 @@
-import type { Camera, Model, ROI } from '../../types/index';
+import { useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import {
+  Image,
+  Camera,
+  Cpu,
+  ScanSearch,
+  BarChart2,
+  HelpCircle,
+  ChevronDown,
+  ChevronRight,
+  ChevronsLeft,
+} from 'lucide-react';
+
+interface NavItem {
+  label: string;
+  icon: LucideIcon;
+  children: string[];
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { label: 'Imagen', icon: Image, children: ['ROI', 'Calibración'] },
+  { label: 'Comunicación cámara', icon: Camera, children: ['Diagnóstico', 'Trigger'] },
+  { label: 'Entrenamiento', icon: Cpu, children: ['Detección', 'Clasificación', 'Segmentación', 'OCR'] },
+  { label: 'Inspección', icon: ScanSearch, children: ['Medición', 'non'] },
+  { label: 'Resultados', icon: BarChart2, children: [] },
+  { label: 'Ayuda', icon: HelpCircle, children: ['Manual de usuario', 'Contacto'] },
+];
 
 interface LeftSidebarProps {
-  camera: Camera;
-  model: Model;
-  rois: ROI[];
+  collapsed?: boolean;
+  onCollapse?: () => void;
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-2 py-1.5 border-b border-[#f1f2f4] text-[13px]">
-      <span className="text-[#6b7280]">{label}</span>
-      <span className="font-semibold text-right">{value}</span>
-    </div>
-  );
-}
+export function LeftSideBar({ collapsed = false, onCollapse }: LeftSidebarProps) {
+  const [openSections, setOpenSections] = useState<string[]>(['Imagen']);
+  const [activeItem, setActiveItem] = useState<string | null>(null);
 
-export function LeftSideBar({ camera, model, rois }: LeftSidebarProps) {
-  return (
-    <aside className="flex flex-col gap-4 min-h-0">
-      <section className="bg-white border border-[#e2e5ea] rounded-[10px] py-3.5 px-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.04em] text-[#6b7280] mb-[10px]">
-          Cámara y modelo
-        </p>
-        <InfoRow label="Cámara" value={camera.name} />
-        <InfoRow label="Protocolo" value={camera.protocol.toUpperCase()} />
-        <InfoRow
-          label="Resolución"
-          value={`${camera.resolution.width}×${camera.resolution.height}`}
-        />
-        <InfoRow label="FPS" value={String(camera.fps)} />
-        <InfoRow label="Modelo" value={model.name} />
-        <InfoRow label="Sensibilidad" value={`${Math.round(model.confidenceThreshold * 100)}%`} />
-      </section>
+  const toggle = (label: string) => {
+    setOpenSections((prev) =>
+      prev.includes(label) ? prev.filter((s) => s !== label) : [...prev, label]
+    );
+  };
 
-      <section className="bg-white border border-[#e2e5ea] rounded-[10px] py-3.5 px-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.04em] text-[#6b7280] mb-[10px]">
-          Zonas de interés
-        </p>
-        {rois.map((roi) => (
-          <div key={roi.id} className="w-2 h-2 rounded-full shrink-0">
-            <span
-              className={`"w-2 h-2 rounded-full shrink-0" ${roi.isEnabled ? 'w-2 h-2 rounded-full shrink-0 bg-[#2f6fe4]' : 'w-2 h-2 rounded-full shrink-0 bg-[#c7ccd3]'}`}
-            />
-            <span className="text-[#1f2430]">{roi.label}</span>
-          </div>
-        ))}
-      </section>
+  return (
+    <aside className="flex flex-col bg-white rounded-2xl border-[#e2e5ea] h-fit w-52 shrink-0 mb-72">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#e2e5ea]">
+        {!collapsed && (
+          <span className="text-[15px] font-semibold text-[#393939]">Herramientas</span>
+        )}
+        <button
+          type="button"
+          onClick={onCollapse}
+          className="text-[#6b7280] hover:text-[#393939] transition-colors cursor-pointer ml-auto"
+        >
+          <ChevronsLeft size={18} />
+        </button>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex flex-col py-2 overflow-y-auto flex-1">
+        {NAV_ITEMS.map(({ label, icon: Icon, children }) => {
+          const isOpen = openSections.includes(label);
+          const hasChildren = children.length > 0;
+
+          return (
+            <div key={label}>
+              {/* Section header */}
+              <button
+                type="button"
+                onClick={() => hasChildren && toggle(label)}
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-semibold text-[#1f2430] hover:bg-[#f5f6f8] transition-colors cursor-pointer"
+              >
+                {hasChildren ? (
+                  isOpen ? <ChevronDown size={14} className="text-[#6b7280] shrink-0" />
+                           : <ChevronRight size={14} className="text-[#6b7280] shrink-0" />
+                ) : (
+                  <span className="w-3.5 shrink-0" />
+                )}
+                <Icon size={15} className="shrink-0 text-[#6b7280]" />
+                {label}
+              </button>
+
+              {/* Children */}
+              {hasChildren && isOpen && (
+                <div className="flex flex-col">
+                  {children.map((child) => {
+                    const isActive = activeItem === child;
+                    return (
+                      <button
+                        key={child}
+                        type="button"
+                        onClick={() => setActiveItem(child)}
+                        className={`w-full text-left pl-20 pr-4 py-1.5 text-[13px] border-l-2 transition-colors cursor-pointer ${
+                          isActive
+                            ? 'border-[#2f6fe4] text-[#2f6fe4] font-semibold bg-[rgba(47,111,228,0.06)]'
+                            : 'border-transparent text-[#6b7280] hover:text-[#1f2430] hover:bg-[#f5f6f8]'
+                        }`}
+                      >
+                        {child}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
     </aside>
   );
 }
