@@ -12,20 +12,21 @@ import {
   ChevronsLeft,
 } from 'lucide-react';
 import { ROICoordinatesPanel } from './ROICoordinatesPanel';
+import { Ayuda, Entrenamiento, Imagen, Inspeccion, Resultados, Submenu } from '../CommonComponents/Icons/IconCommon'
 
 interface NavItem {
   label: string;
-  icon: LucideIcon;
+  icon: React.ComponentType;
   children: string[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Imagen', icon: Image, children: ['ROI', 'Calibración'] },
-  { label: 'Comunicación cámara', icon: Camera, children: ['Diagnóstico', 'Trigger'] },
-  { label: 'Entrenamiento', icon: Cpu, children: ['Detección', 'Clasificación', 'Segmentación', 'OCR'] },
-  { label: 'Inspección', icon: ScanSearch, children: ['Medición', 'non'] },
-  { label: 'Resultados', icon: BarChart2, children: [] },
-  { label: 'Ayuda', icon: HelpCircle, children: ['Manual de usuario', 'Contacto'] },
+  { label: 'Imagen', icon: Imagen, children: ['ROI'] },
+  // { label: 'Comunicación cámara', icon: Camera, children: ['Diagnóstico', 'Trigger'] },
+  { label: 'Entrenamiento', icon: Entrenamiento, children: ['Detección', 'Clasificación', 'Segmentación', 'OCR'] },
+  { label: 'Inspección', icon: Inspeccion, children: ['Medición', 'non'] },
+  { label: 'Resultados', icon: Resultados, children: [] },
+  { label: 'Ayuda', icon: Ayuda, children: ['Manual de usuario', 'Contacto'] },
 ];
 
 interface LeftSidebarProps {
@@ -75,12 +76,12 @@ export function LeftSideBar({
           const hasChildren = children.length > 0;
 
           return (
-            <div key={label}>
+            <div key={label} className="mx-1 mb-2 bg-[#F7F7F7] rounded-xl">
               {/* Section header */}
               <button
                 type="button"
                 onClick={() => hasChildren && toggle(label)}
-                className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-semibold text-[#1f2430] hover:bg-[#f5f6f8] transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-semibold text-[#1f2430] transition-colors cursor-pointer"
               >
                 {hasChildren ? (
                   isOpen ? <ChevronDown size={14} className="text-[#6b7280] shrink-0" />
@@ -94,24 +95,44 @@ export function LeftSideBar({
 
               {/* Children */}
               {hasChildren && isOpen && (
-                <div className="flex flex-col">
-                  {children.map((child) => {
-                    const isActive = activeItem === child;
-                    return (
+              <div className="relative">
+                {children.map((child, index) => {
+                  const isActive = activeItem === child;
+                  const isLast = index === children.length - 1;
+
+                  return (
+                    <div key={child} className="relative flex items-center py-1.5 mx-5.5">
+                      {/* Línea vertical — no se dibuja debajo del último item */}
+                      {!isLast && (
+                        <div className="absolute left-[1.35rem] top-0 bottom-0 w-px bg-[#DCDCDC] h-12" />
+                      )}
+                      <div className="absolute left-[1.35rem] top-0 bottom-1/2 w-px bg-[#DCDCDC] h-px">
+                      <Submenu></Submenu>
+                       </div>
+                      {isLast && (
+                      <div className="absolute left-[1.35rem] top-0 bottom-0 w-px bg-[#DCDCDC] h-px" >
+                        <Submenu></Submenu>
+                      </div>
+                      )}
+
+                      {/* Rama horizontal */}
+                      <div className="absolute left-[1.35rem]  w-3 h-px bg-transparent"> 
+                      </div>
+
                       <button
-                        key={child}
                         type="button"
                         onClick={() => setActiveItem(child)}
-                        className={`w-full text-left pl-20 pr-4 py-1.5 text-[13px] border-l-2 transition-colors cursor-pointer ${
+                        className={`ml-10 w-full text-left px-2 text-[13px] transition-colors cursor-pointer ${
                           isActive
-                            ? 'border-[#2f6fe4] text-[#2f6fe4] font-semibold bg-[rgba(47,111,228,0.06)]'
-                            : 'border-transparent text-[#6b7280] hover:text-[#1f2430] hover:bg-[#f5f6f8]'
+                            ? 'text-[#393939] font-semibold'
+                            : 'border-transparent text-[#6b7280] hover:text-[#1f2430]'
                         }`}
                       >
                         {child}
                       </button>
-                    );
-                  })}
+                    </div>
+                  );
+                })} 
 
                   {label === 'Imagen' && activeItem === 'ROI' && (
                     <div className="px-3 pb-2">

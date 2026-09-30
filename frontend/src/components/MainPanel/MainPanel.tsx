@@ -130,7 +130,7 @@ function MainPanel() {
   };
 
   return (
-    <div className="font-inter flex flex-col h-full w-full bg-[#FAF9F9] noise-[178,100,5] text-[#393939]">
+    <div className="font-inter flex flex-col h-full w-full bg-[#FAF9F9] dark:bg-[#393939] noise-[178,100,5] text-[#393939]">
       {noCamerasDetected && (
         <p className="mx-4 mt-3 rounded-lg bg-[rgba(224,160,32,0.12)] px-3 py-2 text-[13px] font-medium text-[#8a6410]">
           {camerasMessage}

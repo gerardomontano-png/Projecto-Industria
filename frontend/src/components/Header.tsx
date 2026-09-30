@@ -1,3 +1,5 @@
+import ModeToggle from "./CommonComponents/Button/ModeToggle";
+
 export type AppView = 'monitor' | 'inference';
 
 interface HeaderProps {
@@ -5,7 +7,7 @@ interface HeaderProps {
   onViewChange: (view: AppView) => void;
 }
 
-function Header({ view, onViewChange }: HeaderProps) {
+function Header({ view, onViewChange, isDarkMode, setIsDarkMode }: HeaderProps) {
   return (
     <header className="inter w-full h-[60px] flex items-center justify-between px-5 bg-white border-b border-gray-200 box-border">
       <div className="w-[100px] flex items-center">{/* aquí luego va un botón o logo */}</div>
@@ -15,6 +17,8 @@ function Header({ view, onViewChange }: HeaderProps) {
       </p>
 
       <div className="min-w-[100px] flex items-center justify-end gap-2">
+  
+        <ModeToggle isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode}/>
         <button
           type="button"
           onClick={() => onViewChange('monitor')}
