@@ -1,6 +1,9 @@
 import type { Camera, Job } from '../../types/index';
 import type { ApiModel } from '../../types';
 import { useCameraStream } from '../../hooks/useCameraStream';
+import { useMemo } from 'react';
+import { useROIStore } from '../../store/roiStore';
+import { roiToBackendParams } from '../../utils/roiUtils';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
 import { TopBar } from '../Toolbar';
@@ -44,7 +47,32 @@ export function LiveViewer({
   onCameraChange,
 }: LiveViewerProps) {
   const isInspectionRunning = job.status === 'running';
-  const { canvasRef, isConnected, error, displaySize } = useCameraStream(cameraId);
+  const rois = useROIStore((s) => s.rois);
+
+  const streamRoi = useMemo(() => {
+    const activeRoi = rois.find((roi) => roi.cameraId === cameraId && roi.isEnabled);
+    if (!activeRoi) return null;
+    return roiToBackendParams(activeRoi, {
+      width: camera.resolution.width,
+      height: camera.resolution.height,
+    });
+  }, [rois, cameraId, camera.resolution.width, camera.resolution.height]);
+
+  const streamOptions = useMemo(
+    () =>
+      isInspectionRunning
+        ? {
+            mode: 'inference' as const,
+            modelId: effectiveModelId || undefined,
+            roi: streamRoi,
+          }
+        : {
+            mode: 'stream' as const,
+          },
+    [isInspectionRunning, effectiveModelId, streamRoi]
+  );
+
+  const { canvasRef, isConnected, error, displaySize } = useCameraStream(cameraId, streamOptions);
 
   return (
     <div className="flex flex-col items-center gap-1 min-h-0 mt-10">

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { InferenceResult, ModelTask, ROIRect } from '../../types';
 import { useModels } from '../../hooks/useModels';
 import {
@@ -8,6 +9,7 @@ import {
   runLocalization,
   runOcr,
 } from '../../services/inferenceApi';
+import { toNormalized, toPixels, isValidNormalizedRect } from '../../utils/roiCoords';
 import { TaskTabs } from './TaskTabs';
 import { ModelPicker } from './ModelPicker';
 import { ImageDropzone } from './ImageDropzone';
@@ -17,7 +19,18 @@ import { ButtonCommon } from '../CommonComponents';
 
 type RunStatus = 'idle' | 'running' | 'success' | 'error';
 
+interface NormRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const ROI_FIELDS = ['x', 'y', 'width', 'height'] as const;
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
 
 export function InferencePanel() {
   const { byTask, isLoading: isLoadingModels, error: modelsError } = useModels();
@@ -27,6 +40,9 @@ export function InferencePanel() {
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [roiEnabled, setRoiEnabled] = useState(false);
   const [roi, setRoi] = useState<ROIRect>({ x: 0, y: 0, width: 0, height: 0 });
+  const [roiNatural, setRoiNatural] = useState<{ width: number; height: number } | null>(null);
+  const [roiDragRect, setRoiDragRect] = useState<NormRect | null>(null);
+  const roiDragStartRef = useRef<{ x: number; y: number } | null>(null);
   const [status, setStatus] = useState<RunStatus>('idle');
   const [result, setResult] = useState<InferenceResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -62,11 +78,71 @@ export function InferencePanel() {
     };
   }, [image]);
 
+  // Reinicia el ROI dibujado al cambiar de imagen: las coordenadas en píxeles
+  // ya no corresponden a las dimensiones naturales de la nueva imagen.
+  useEffect(() => {
+    setRoiNatural(null);
+    setRoi({ x: 0, y: 0, width: 0, height: 0 });
+  }, [image]);
+
   const handleTaskChange = (next: ModelTask) => {
     setTask(next);
     setImage(null);
     setReferenceImage(null);
   };
+
+  const getNormPointFromEvent = (e: ReactPointerEvent<HTMLDivElement>): { x: number; y: number } => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return {
+      x: clamp01((e.clientX - rect.left) / rect.width),
+      y: clamp01((e.clientY - rect.top) / rect.height),
+    };
+  };
+
+  const handleRoiPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!roiNatural) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const point = getNormPointFromEvent(e);
+    roiDragStartRef.current = point;
+    setRoiDragRect({ x: point.x, y: point.y, width: 0, height: 0 });
+  };
+
+  const handleRoiPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const start = roiDragStartRef.current;
+    if (!start) return;
+    const point = getNormPointFromEvent(e);
+    setRoiDragRect({
+      x: Math.min(start.x, point.x),
+      y: Math.min(start.y, point.y),
+      width: Math.abs(point.x - start.x),
+      height: Math.abs(point.y - start.y),
+    });
+  };
+
+  const handleRoiPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    roiDragStartRef.current = null;
+    const finalRect = roiDragRect;
+    setRoiDragRect(null);
+    if (finalRect && roiNatural && isValidNormalizedRect(finalRect)) {
+      const pixelRect = toPixels(finalRect, roiNatural.width, roiNatural.height);
+      setRoi({
+        x: Math.round(pixelRect.x),
+        y: Math.round(pixelRect.y),
+        width: Math.round(pixelRect.width),
+        height: Math.round(pixelRect.height),
+      });
+    }
+  };
+
+  // Rectángulo normalizado a mostrar: el que se está arrastrando, o el ya aplicado en `roi`.
+  const roiOverlayRect =
+    roiDragRect ??
+    (roiNatural && roi.width > 0 && roi.height > 0
+      ? toNormalized(roi, roiNatural.width, roiNatural.height)
+      : null);
 
   const canRun =
     !!selectedModelId &&
@@ -147,21 +223,60 @@ export function InferencePanel() {
               Limitar a una zona (ROI)
             </label>
             {roiEnabled && (
-              <div className="grid grid-cols-2 gap-2">
-                {ROI_FIELDS.map((field) => (
-                  <label key={field} className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
-                    {field}
-                    <input
-                      type="number"
-                      value={roi[field]}
-                      onChange={(e) =>
-                        setRoi((prev) => ({ ...prev, [field]: Number(e.target.value) }))
-                      }
-                      className="h-8 px-2 rounded-lg border border-[#e2e5ea] text-[13px]"
+              <>
+                {imageUrl ? (
+                  <div
+                    onPointerDown={handleRoiPointerDown}
+                    onPointerMove={handleRoiPointerMove}
+                    onPointerUp={handleRoiPointerUp}
+                    className="relative w-full rounded-lg overflow-hidden border border-[#e2e5ea] bg-[#1f2430] cursor-crosshair touch-none"
+                  >
+                    <img
+                      src={imageUrl}
+                      alt="Vista previa para dibujar el ROI"
+                      className="w-full h-auto block select-none pointer-events-none"
+                      draggable={false}
+                      onLoad={(e) => {
+                        const img = e.currentTarget;
+                        setRoiNatural({ width: img.naturalWidth, height: img.naturalHeight });
+                      }}
                     />
-                  </label>
-                ))}
-              </div>
+                    {roiOverlayRect && (
+                      <div
+                        className="absolute border-2 border-[#2f6fe4] bg-[rgba(47,111,228,0.15)] pointer-events-none"
+                        style={{
+                          left: `${roiOverlayRect.x * 100}%`,
+                          top: `${roiOverlayRect.y * 100}%`,
+                          width: `${roiOverlayRect.width * 100}%`,
+                          height: `${roiOverlayRect.height * 100}%`,
+                        }}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-[#6b7280]">
+                    Sube una imagen para dibujar la zona directamente sobre ella.
+                  </p>
+                )}
+                <p className="text-[11px] text-[#6b7280]">
+                  Arrastra sobre la imagen para definir el ROI, o ajusta los valores manualmente.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {ROI_FIELDS.map((field) => (
+                    <label key={field} className="flex flex-col gap-1 text-[11px] text-[#6b7280]">
+                      {field}
+                      <input
+                        type="number"
+                        value={roi[field]}
+                        onChange={(e) =>
+                          setRoi((prev) => ({ ...prev, [field]: Number(e.target.value) }))
+                        }
+                        className="h-8 px-2 rounded-lg border border-[#e2e5ea] text-[13px]"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </>
             )}
           </section>
 

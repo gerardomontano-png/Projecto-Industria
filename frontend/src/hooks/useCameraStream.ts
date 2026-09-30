@@ -7,7 +7,40 @@
 import { useState, useEffect, useRef } from 'react';
 import type { LocalizationDetection } from '../types';
 
-const WS_URL = 'ws://127.0.0.1:8000/ws/stream';
+const STREAM_WS_URL = 'ws://127.0.0.1:8000/ws/stream';
+const INFERENCE_WS_URL = 'ws://127.0.0.1:8000/ws/inference-stream';
+
+interface CameraStreamOptions {
+  mode?: 'stream' | 'inference';
+  modelId?: string;
+  conf?: number;
+  iou?: number;
+  inferEveryNFrames?: number;
+  roi?: { x1: number; y1: number; x2: number; y2: number } | null;
+}
+
+function buildWsUrl(cameraId: string, options: CameraStreamOptions): string {
+  const params = new URLSearchParams();
+  params.set('camera_id', cameraId);
+
+  if (options.mode === 'inference') {
+    if (options.modelId) params.set('model_id', options.modelId);
+    if (options.conf !== undefined) params.set('conf', String(options.conf));
+    if (options.iou !== undefined) params.set('iou', String(options.iou));
+    if (options.inferEveryNFrames !== undefined) {
+      params.set('infer_every_n_frames', String(options.inferEveryNFrames));
+    }
+    if (options.roi) {
+      params.set('x1', String(options.roi.x1));
+      params.set('y1', String(options.roi.y1));
+      params.set('x2', String(options.roi.x2));
+      params.set('y2', String(options.roi.y2));
+    }
+  }
+
+  const base = options.mode === 'inference' ? INFERENCE_WS_URL : STREAM_WS_URL;
+  return `${base}?${params.toString()}`;
+}
 
 // ---------------------------------------------------------------------------
 // T-12: Frame buffer
@@ -123,7 +156,10 @@ interface UseCameraStreamResult {
   detections: LocalizationDetection[];
 }
 
-export function useCameraStream(cameraId: string): UseCameraStreamResult {
+export function useCameraStream(
+  cameraId: string,
+  options: CameraStreamOptions = {}
+): UseCameraStreamResult {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +180,7 @@ export function useCameraStream(cameraId: string): UseCameraStreamResult {
   const lastFrameAtRef = useRef(0);
   const naturalSizeRef = useRef<{ width: number; height: number } | null>(null);
   const detectionsRef = useRef<LocalizationDetection[]>([]);
+  const wsUrl = buildWsUrl(cameraId, options);
 
   // T-13: ResizeObserver — runs once, canvas is always in DOM
   useEffect(() => {
@@ -242,7 +279,7 @@ export function useCameraStream(cameraId: string): UseCameraStreamResult {
     function connect() {
       if (destroyedRef.current) return;
 
-      const ws = new WebSocket(`${WS_URL}?camera_id=${encodeURIComponent(cameraId)}`);
+      const ws = new WebSocket(wsUrl);
       ws.binaryType = 'blob';
       wsRef.current = ws;
 
@@ -311,7 +348,7 @@ export function useCameraStream(cameraId: string): UseCameraStreamResult {
       if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
       wsRef.current = null;
     };
-  }, [cameraId]);
+  }, [wsUrl]);
 
   return { canvasRef, isConnected, error, naturalSize, displaySize, detections };
 }
