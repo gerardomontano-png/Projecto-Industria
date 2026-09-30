@@ -3,9 +3,11 @@
  * Reconnects when URL params change.
  */
 import { useState, useEffect, useRef } from 'react';
-import type { LocalizationDetection } from '../types';
+import type { FrameMetadata, LocalizationDetection } from '../types';
+import { parseFrameMetadata, splitFrameMessage } from '../utils/frameMetadata';
 
 const WS_BASE = 'ws://127.0.0.1:8000/ws/inference-stream';
+const NO_DETECTIONS: LocalizationDetection[] = [];
 
 interface InferenceStreamOptions {
   modelId?: string;
@@ -17,31 +19,18 @@ interface InferenceStreamOptions {
 
 interface UseInferenceStreamResult {
   frameUrl: string | null;
+  /** Metadata del frame en `frameUrl` (detecciones por clase, score, bbox) */
+  frameMetadata: FrameMetadata | null;
   /** Detecciones YOLO incrustadas en el frame más reciente (vacío si aún no llegan) */
   detections: LocalizationDetection[];
   isConnected: boolean;
   error: string | null;
 }
 
-interface RawStreamedDetection {
-  class_id?: number;
-  classId?: number;
-  class_name?: string;
-  className?: string;
-  confidence?: number;
-  bbox?: { x1: number; y1: number; x2: number; y2: number };
-}
-
-function normalizeDetections(raw: unknown): LocalizationDetection[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((d): d is RawStreamedDetection => !!d && typeof d === 'object')
-    .map((d) => ({
-      classId: d.class_id ?? d.classId ?? -1,
-      className: d.class_name ?? d.className,
-      confidence: d.confidence ?? 0,
-      bbox: d.bbox ?? { x1: 0, y1: 0, x2: 0, y2: 0 },
-    }));
+/** Frame y su metadata en un solo estado, para que nunca se rendericen desfasados */
+interface CurrentFrame {
+  url: string;
+  metadata: FrameMetadata;
 }
 
 function buildWsUrl(cameraId: string, options: InferenceStreamOptions): string {
@@ -70,8 +59,7 @@ export function useInferenceStream(
   cameraId: string,
   options: InferenceStreamOptions = {}
 ): UseInferenceStreamResult {
-  const [frameUrl, setFrameUrl] = useState<string | null>(null);
-  const [detections, setDetections] = useState<LocalizationDetection[]>([]);
+  const [current, setCurrent] = useState<CurrentFrame | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const prevUrlRef = useRef<string | null>(null);
@@ -81,6 +69,7 @@ export function useInferenceStream(
 
   useEffect(() => {
     let ws: WebSocket | null = null;
+    let sequence = 0;
 
     const timer = setTimeout(() => {
       ws = new WebSocket(wsUrl);
@@ -110,32 +99,21 @@ export function useInferenceStream(
         if (!(event.data instanceof Blob)) return;
 
         const buffer = await event.data.arrayBuffer();
-        const view = new DataView(buffer);
-
-        // Protocolo: [4 bytes uint32 BE = longitud JSON] [JSON con detecciones] [JPEG]
-        const jsonLen = view.getUint32(0, false);
-        const jpegOffset = 4 + jsonLen;
-        const validJsonSection = jpegOffset < buffer.byteLength;
-        const jpeg = validJsonSection ? buffer.slice(jpegOffset) : buffer;
-
-        if (validJsonSection) {
-          try {
-            const meta = JSON.parse(new TextDecoder().decode(buffer.slice(4, jpegOffset)));
-            setDetections(normalizeDetections(meta?.detections ?? meta));
-          } catch {
-            setDetections([]);
-          }
-        }
+        const { rawMeta, jpeg } = splitFrameMessage(buffer);
+        const metadata = parseFrameMetadata(rawMeta, sequence++);
 
         if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
         const url = URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }));
         prevUrlRef.current = url;
-        setFrameUrl(url);
+        setCurrent({ url, metadata });
       };
 
       ws.onerror = () => setError('Error en la conexión WebSocket de inferencia');
 
-      ws.onclose = () => setIsConnected(false);
+      ws.onclose = () => {
+        setIsConnected(false);
+        setCurrent(null);
+      };
     }, 0);
 
     return () => {
@@ -148,5 +126,11 @@ export function useInferenceStream(
     };
   }, [wsUrl]);
 
-  return { frameUrl, detections, isConnected, error };
+  return {
+    frameUrl: current?.url ?? null,
+    frameMetadata: current?.metadata ?? null,
+    detections: current?.metadata.detections ?? NO_DETECTIONS,
+    isConnected,
+    error,
+  };
 }

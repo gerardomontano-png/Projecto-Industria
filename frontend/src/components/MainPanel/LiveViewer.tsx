@@ -3,6 +3,7 @@ import type { ApiModel } from '../../types';
 import { useCameraStream } from '../../hooks/useCameraStream';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
+import { DetectionCanvas } from './DetectionCanvas';
 import { TopBar } from '../Toolbar';
 
 interface LiveViewerProps {
@@ -44,7 +45,16 @@ export function LiveViewer({
   onCameraChange,
 }: LiveViewerProps) {
   const isInspectionRunning = job.status === 'running';
-  const { canvasRef, isConnected, error, displaySize } = useCameraStream(cameraId);
+
+  // El stream de inferencia en vivo solo devuelve detecciones de modelos de localización
+  const jobModel = models.find((m) => m.id === job.modelId);
+  const isDetectionModel = jobModel?.task === 'localization';
+  const inferenceModelId = isInspectionRunning && isDetectionModel ? job.modelId : null;
+
+  const { canvasRef, detectionCanvasRef, isConnected, error, displaySize } = useCameraStream(
+    cameraId,
+    inferenceModelId
+  );
 
   return (
     <div className="flex flex-col items-center gap-1 min-h-0 mt-10">
@@ -108,6 +118,7 @@ export function LiveViewer({
           className="absolute inset-0 w-full h-full"
           style={{ display: 'block' }}
         />
+        <DetectionCanvas ref={detectionCanvasRef} />
         {displaySize.width > 0 && (
           <ROICanvas width={displaySize.width} height={displaySize.height} cameraId={cameraId} />
         )}
@@ -127,6 +138,11 @@ export function LiveViewer({
       >
         {isInspectionRunning ? 'Detener' : 'Iniciar'}
       </ButtonCommon>
+      {isInspectionRunning && !isDetectionModel && (
+        <p className="text-[12px] text-[#8a6410]">
+          La inspección en vivo solo muestra detecciones con modelos de detección (YOLO).
+        </p>
+      )}
     </div>
   );
 }
