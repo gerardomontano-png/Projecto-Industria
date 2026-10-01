@@ -6,6 +6,7 @@ import { useROIStore } from '../../store/roiStore';
 import { roiToBackendParams } from '../../utils/roiUtils';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
+import { DetectionCanvas } from './DetectionCanvas';
 import { TopBar } from '../Toolbar';
 
 interface LiveViewerProps {
@@ -58,21 +59,29 @@ export function LiveViewer({
     });
   }, [rois, cameraId, camera.resolution.width, camera.resolution.height]);
 
+  // El stream de inferencia en vivo solo devuelve detecciones de modelos de localización
+  const jobModel = models.find((m) => m.id === job.modelId);
+  const isDetectionModel = jobModel?.task === 'localization';
+  const isLiveInference = isInspectionRunning && isDetectionModel;
+
   const streamOptions = useMemo(
     () =>
-      isInspectionRunning
+      isLiveInference
         ? {
             mode: 'inference' as const,
-            modelId: effectiveModelId || undefined,
+            modelId: job.modelId,
             roi: streamRoi,
           }
         : {
             mode: 'stream' as const,
           },
-    [isInspectionRunning, effectiveModelId, streamRoi]
+    [isLiveInference, job.modelId, streamRoi]
   );
 
-  const { canvasRef, isConnected, error, displaySize } = useCameraStream(cameraId, streamOptions);
+  const { canvasRef, detectionCanvasRef, isConnected, error, displaySize } = useCameraStream(
+    cameraId,
+    streamOptions
+  );
 
   return (
     <div className="flex flex-col items-center gap-3 min-h-0 mt-10">
@@ -136,6 +145,7 @@ export function LiveViewer({
           className="absolute inset-0 w-full h-full"
           style={{ display: 'block' }}
         />
+        <DetectionCanvas ref={detectionCanvasRef} />
         {displaySize.width > 0 && (
           <ROICanvas width={displaySize.width} height={displaySize.height} cameraId={cameraId} />
         )}
@@ -155,6 +165,11 @@ export function LiveViewer({
       >
         {isInspectionRunning ? 'Detener' : 'Iniciar'}
       </ButtonCommon>
+      {isInspectionRunning && !isDetectionModel && (
+        <p className="text-[12px] text-[#8a6410]">
+          La inspección en vivo solo muestra detecciones con modelos de detección (YOLO).
+        </p>
+      )}
     </div>
   );
 }

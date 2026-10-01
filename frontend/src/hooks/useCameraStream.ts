@@ -5,7 +5,10 @@
  * T-16: Watchdog for frozen streams
  */
 import { useState, useEffect, useRef } from 'react';
-import type { LocalizationDetection } from '../types';
+import type { FrameMetadata } from '../types';
+import type { FrameWorkerResult } from '../workers/frameDeserializer';
+import { clearDetections, redrawDetections } from '../components/MainPanel/DetectionCanvas';
+import { computeContainFit } from '../utils/bboxTransform';
 import { WS_URL } from '../config';
 import {
   flushLiveInferenceFrame,
@@ -17,6 +20,7 @@ const STREAM_WS_URL = `${WS_URL}/ws/stream`;
 const INFERENCE_WS_URL = `${WS_URL}/ws/inference-stream`;
 
 interface CameraStreamOptions {
+  /** 'inference' abre /ws/inference-stream y cada frame trae sus detecciones */
   mode?: 'stream' | 'inference';
   modelId?: string;
   conf?: number;
@@ -51,103 +55,66 @@ function buildWsUrl(cameraId: string, options: CameraStreamOptions): string {
 // ---------------------------------------------------------------------------
 // T-12: Frame buffer
 // ---------------------------------------------------------------------------
+
+/** Un frame y SU metadata: viajan juntos para que overlay y datos no se desfasen */
+interface BufferedFrame {
+  jpeg: ArrayBuffer;
+  metadata: FrameMetadata;
+}
+
 class FrameBuffer {
-  private items: ArrayBuffer[] = [];
+  private items: BufferedFrame[] = [];
   private readonly maxSize: number;
 
   constructor(maxSize = 3) {
     this.maxSize = maxSize;
   }
 
-  push(item: ArrayBuffer): void {
+  push(item: BufferedFrame): void {
     if (this.items.length >= this.maxSize) {
       this.items.shift(); // drop oldest
     }
     this.items.push(item);
   }
 
-  pop(): ArrayBuffer | undefined {
+  pop(): BufferedFrame | undefined {
     return this.items.shift();
   }
-}
 
-// ---------------------------------------------------------------------------
-// Detection normalization (shared with inference stream)
-// ---------------------------------------------------------------------------
-interface RawStreamedDetection {
-  class_id?: number;
-  classId?: number;
-  class_name?: string;
-  className?: string;
-  confidence?: number;
-  bbox?: { x1: number; y1: number; x2: number; y2: number };
-}
-
-function normalizeDetections(raw: unknown): LocalizationDetection[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((d): d is RawStreamedDetection => !!d && typeof d === 'object')
-    .map((d) => ({
-      classId: d.class_id ?? d.classId ?? -1,
-      className: d.class_name ?? d.className,
-      confidence: d.confidence ?? 0,
-      bbox: d.bbox ?? { x1: 0, y1: 0, x2: 0, y2: 0 },
-    }));
+  clear(): void {
+    this.items = [];
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Canvas helpers
 // ---------------------------------------------------------------------------
-interface ContainFitResult {
-  dx: number;
-  dy: number;
-  dw: number;
-  dh: number;
-  scaleX: number;
-  scaleY: number;
+
+/** Último frame pintado: permite repintar video + cajas al redimensionar sin esperar otro frame */
+interface DrawnFrame {
+  bitmap: ImageBitmap;
+  metadata: FrameMetadata;
 }
 
-function computeContainFit(
-  canvasW: number,
-  canvasH: number,
-  imgW: number,
-  imgH: number
-): ContainFitResult {
-  const scale = Math.min(canvasW / imgW, canvasH / imgH);
-  const dw = imgW * scale;
-  const dh = imgH * scale;
-  const dx = (canvasW - dw) / 2;
-  const dy = (canvasH - dh) / 2;
-  return { dx, dy, dw, dh, scaleX: scale, scaleY: scale };
-}
-
-function drawBBoxes(
-  ctx: CanvasRenderingContext2D,
-  detections: LocalizationDetection[],
-  fit: ContainFitResult
+/** Pinta el frame (letterbox) y su capa de detecciones con el tamaño actual del canvas. */
+function paintFrame(
+  canvas: HTMLCanvasElement,
+  overlay: HTMLCanvasElement | null,
+  { bitmap, metadata }: DrawnFrame
 ): void {
-  if (detections.length === 0) return;
-  ctx.save();
-  for (const det of detections) {
-    const { x1, y1, x2, y2 } = det.bbox;
-    const rx = fit.dx + x1 * fit.scaleX;
-    const ry = fit.dy + y1 * fit.scaleY;
-    const rw = (x2 - x1) * fit.scaleX;
-    const rh = (y2 - y1) * fit.scaleY;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const display = { width: canvas.width, height: canvas.height };
+  const frameSize = { width: bitmap.width, height: bitmap.height };
 
-    ctx.strokeStyle = '#2f6fe4';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(rx, ry, rw, rh);
+  const fit = computeContainFit(display, frameSize);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, fit.dx, fit.dy, fit.dw, fit.dh);
 
-    const label = `${det.className ?? `clase ${det.classId}`} ${Math.round(det.confidence * 100)}%`;
-    ctx.font = 'bold 11px sans-serif';
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = '#2f6fe4';
-    ctx.fillRect(rx, ry - 16, tw + 6, 16);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(label, rx + 3, ry - 3);
+  // Overlay del MISMO frame: se limpia y redibuja, sin acumular
+  if (overlay) {
+    redrawDetections(overlay, metadata.detections, frameSize, display, metadata.sourceSize);
   }
-  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -155,11 +122,17 @@ function drawBBoxes(
 // ---------------------------------------------------------------------------
 interface UseCameraStreamResult {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  /** Canvas de la capa de detecciones (se pasa a <DetectionCanvas />) */
+  detectionCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   isConnected: boolean;
   error: string | null;
   naturalSize: { width: number; height: number } | null;
   displaySize: { width: number; height: number };
-  detections: LocalizationDetection[];
+  /**
+   * Metadata del frame que se está mostrando AHORA (detecciones por clase, score, bbox).
+   * Se actualiza en el mismo paso en que se pinta el frame; null si no hay stream.
+   */
+  frameMetadata: FrameMetadata | null;
 }
 
 export function useCameraStream(
@@ -167,6 +140,7 @@ export function useCameraStream(
   options: CameraStreamOptions = {}
 ): UseCameraStreamResult {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -174,7 +148,7 @@ export function useCameraStream(
     width: 0,
     height: 0,
   });
-  const [detections, setDetections] = useState<LocalizationDetection[]>([]);
+  const [frameMetadata, setFrameMetadata] = useState<FrameMetadata | null>(null);
 
   // Mutable refs that must not trigger re-renders
   const frameBuffer = useRef(new FrameBuffer(3));
@@ -185,7 +159,7 @@ export function useCameraStream(
   const rafRef = useRef<number | null>(null);
   const lastFrameAtRef = useRef(0);
   const naturalSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const detectionsRef = useRef<LocalizationDetection[]>([]);
+  const lastDrawnRef = useRef<DrawnFrame | null>(null);
   const wsUrl = buildWsUrl(cameraId, options);
 
   // Datos del análisis en vivo para el "último evento". null fuera del modo inferencia:
@@ -213,6 +187,10 @@ export function useCameraStream(
           canvas.width = w;
           canvas.height = h;
           setDisplaySize({ width: w, height: h });
+          // Cambiar el tamaño borra el canvas: se repinta el último frame con la nueva escala
+          if (lastDrawnRef.current) {
+            paintFrame(canvas, detectionCanvasRef.current, lastDrawnRef.current);
+          }
         }
       }
     });
@@ -229,25 +207,24 @@ export function useCameraStream(
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
 
-      const raw = frameBuffer.current.pop();
-      if (raw && canvas && ctx) {
+      const frame = frameBuffer.current.pop();
+      if (frame && canvas && ctx) {
         try {
-          const blob = new Blob([raw], { type: 'image/jpeg' });
+          const blob = new Blob([frame.jpeg], { type: 'image/jpeg' });
           const bitmap = await createImageBitmap(blob);
 
-          // Track natural size from first bitmap
-          if (!naturalSizeRef.current) {
+          const size = naturalSizeRef.current;
+          if (!size || size.width !== bitmap.width || size.height !== bitmap.height) {
             const ns = { width: bitmap.width, height: bitmap.height };
             naturalSizeRef.current = ns;
             setNaturalSize(ns);
           }
 
-          const fit = computeContainFit(canvas.width, canvas.height, bitmap.width, bitmap.height);
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(bitmap, fit.dx, fit.dy, fit.dw, fit.dh);
-          bitmap.close();
-
-          drawBBoxes(ctx, detectionsRef.current, fit);
+          const drawn: DrawnFrame = { bitmap, metadata: frame.metadata };
+          paintFrame(canvas, detectionCanvasRef.current, drawn);
+          lastDrawnRef.current?.bitmap.close();
+          lastDrawnRef.current = drawn;
+          setFrameMetadata(frame.metadata);
         } catch {
           // ignore decode errors
         }
@@ -263,37 +240,39 @@ export function useCameraStream(
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      lastDrawnRef.current?.bitmap.close();
+      lastDrawnRef.current = null;
     };
   }, []);
 
   // T-11 + T-13 + T-15 + T-16: WebSocket + Worker + reconnect + watchdog
   useEffect(() => {
+    /** Olvida el último frame pintado y limpia la capa de detecciones */
+    const resetDrawnFrame = () => {
+      lastDrawnRef.current?.bitmap.close();
+      lastDrawnRef.current = null;
+      if (detectionCanvasRef.current) clearDetections(detectionCanvasRef.current);
+    };
+
     destroyedRef.current = false;
     backoffRef.current = 500;
+    lastFrameAtRef.current = 0;
+    frameBuffer.current.clear();
+    resetDrawnFrame();
 
     // Worker for frame deserialization
     const worker = new Worker(new URL('../workers/frameDeserializer.ts', import.meta.url), {
       type: 'module',
     });
 
-    worker.onmessage = (event: MessageEvent<{ meta: unknown; jpeg: ArrayBuffer }>) => {
-      const { meta, jpeg } = event.data;
+    worker.onmessage = (event: MessageEvent<FrameWorkerResult>) => {
+      const { metadata, jpeg } = event.data;
       lastFrameAtRef.current = Date.now();
-
-      // Parse detections from meta
-      if (meta && typeof meta === 'object') {
-        const metaObj = meta as Record<string, unknown>;
-        const rawDets = metaObj.detections ?? meta;
-        const parsed = normalizeDetections(rawDets);
-        detectionsRef.current = parsed;
-        setDetections(parsed);
-      }
-
-      frameBuffer.current.push(jpeg);
+      frameBuffer.current.push({ jpeg, metadata });
 
       const liveMeta = liveEventMetaRef.current;
       if (liveMeta) {
-        recordLiveInferenceFrame({ ...liveMeta, jpeg, detections: detectionsRef.current });
+        recordLiveInferenceFrame({ ...liveMeta, jpeg, detections: metadata.detections });
       }
     };
 
@@ -340,6 +319,9 @@ export function useCameraStream(
         wsRef.current = null;
         // Desconexión: asegura que el último frame analizado quede guardado.
         flushLiveInferenceFrame();
+        // Sin stream no se deben quedar cajas ni datos congelados del último frame
+        resetDrawnFrame();
+        setFrameMetadata(null);
         if (!destroyedRef.current) {
           // T-15: exponential backoff
           setTimeout(connectRef.current, backoffRef.current);
@@ -375,5 +357,13 @@ export function useCameraStream(
     };
   }, [wsUrl]);
 
-  return { canvasRef, isConnected, error, naturalSize, displaySize, detections };
+  return {
+    canvasRef,
+    detectionCanvasRef,
+    isConnected,
+    error,
+    naturalSize,
+    displaySize,
+    frameMetadata,
+  };
 }
