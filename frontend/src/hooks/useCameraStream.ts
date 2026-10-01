@@ -6,9 +6,15 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import type { LocalizationDetection } from '../types';
+import { WS_URL } from '../config';
+import {
+  flushLiveInferenceFrame,
+  recordLiveInferenceFrame,
+  type LiveInferenceFrame,
+} from '../services/lastInferenceEvent';
 
-const STREAM_WS_URL = 'ws://127.0.0.1:8000/ws/stream';
-const INFERENCE_WS_URL = 'ws://127.0.0.1:8000/ws/inference-stream';
+const STREAM_WS_URL = `${WS_URL}/ws/stream`;
+const INFERENCE_WS_URL = `${WS_URL}/ws/inference-stream`;
 
 interface CameraStreamOptions {
   mode?: 'stream' | 'inference';
@@ -182,6 +188,17 @@ export function useCameraStream(
   const detectionsRef = useRef<LocalizationDetection[]>([]);
   const wsUrl = buildWsUrl(cameraId, options);
 
+  // Datos del análisis en vivo para el "último evento". null fuera del modo inferencia:
+  // el stream sin modelo no es un evento de inferencia y no debe pisar el guardado.
+  const liveEventMetaRef = useRef<Omit<LiveInferenceFrame, 'jpeg' | 'detections'> | null>(null);
+  const isInference = options.mode === 'inference';
+  const { modelId, roi } = options;
+  useEffect(() => {
+    liveEventMetaRef.current = isInference
+      ? { cameraId, modelId: modelId ?? null, roi: roi ?? null }
+      : null;
+  }, [cameraId, isInference, modelId, roi]);
+
   // T-13: ResizeObserver — runs once, canvas is always in DOM
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -273,6 +290,11 @@ export function useCameraStream(
       }
 
       frameBuffer.current.push(jpeg);
+
+      const liveMeta = liveEventMetaRef.current;
+      if (liveMeta) {
+        recordLiveInferenceFrame({ ...liveMeta, jpeg, detections: detectionsRef.current });
+      }
     };
 
     // T-15: connect function stored in ref to avoid stale closures
@@ -316,6 +338,8 @@ export function useCameraStream(
       ws.onclose = () => {
         setIsConnected(false);
         wsRef.current = null;
+        // Desconexión: asegura que el último frame analizado quede guardado.
+        flushLiveInferenceFrame();
         if (!destroyedRef.current) {
           // T-15: exponential backoff
           setTimeout(connectRef.current, backoffRef.current);
@@ -344,6 +368,7 @@ export function useCameraStream(
       clearTimeout(initTimer);
       clearInterval(watchdogInterval);
       worker.terminate();
+      flushLiveInferenceFrame();
       const ws = wsRef.current;
       if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
       wsRef.current = null;

@@ -12,7 +12,10 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.2",
+    "@tanstack/react-query": "^5.104.0",
+    "@tanstack/react-query-persist-client": "^5.104.0",
     "axios": "^1.18.1",
+    "idb-keyval": "^6.3.0",
     "lucide-react": "^1.37.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

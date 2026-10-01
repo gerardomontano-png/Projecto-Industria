@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { onlineManager, useQuery } from '@tanstack/react-query';
 import { getSignal } from '../services/cameraApi';
+import { queryKeys } from '../services/queryClient';
 
 interface UseCameraSignalResult {
   hasSignal: boolean;
@@ -9,39 +10,36 @@ interface UseCameraSignalResult {
 
 // Polling de GET /signal — health check del servidor, sin parámetros de cámara.
 // hasSignal === true significa que el backend está vivo y respondiendo.
+//
+// Además es quien le dice a React Query si hay conexión: el navegador solo sabe
+// si hay red, no si el backend está caído. Al volver la señal, las consultas
+// pausadas se reanudan y las cacheadas se refrescan solas.
+async function checkSignal() {
+  try {
+    const signal = await getSignal();
+    onlineManager.setOnline(true);
+    return signal;
+  } catch (error) {
+    onlineManager.setOnline(false);
+    throw error;
+  }
+}
+
 export function useCameraSignal(intervalMs = 3000): UseCameraSignalResult {
-  const [hasSignal, setHasSignal] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isPending, isError } = useQuery({
+    queryKey: queryKeys.signal,
+    queryFn: checkSignal,
+    refetchInterval: intervalMs,
+    // 'always': debe seguir consultando aunque onlineManager marque offline,
+    // si no nunca se detectaría la reconexión.
+    networkMode: 'always',
+    retry: false,
+    staleTime: 0,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const check = async () => {
-      try {
-        const { connected } = await getSignal();
-        if (!cancelled) {
-          setHasSignal(connected);
-          setError(null);
-        }
-      } catch {
-        if (!cancelled) {
-          setHasSignal(false);
-          setError('Servidor no disponible');
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-
-    check();
-    const interval = setInterval(check, intervalMs);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [intervalMs]);
-
-  return { hasSignal, isLoading, error };
+  return {
+    hasSignal: !isError && (data?.connected ?? false),
+    isLoading: isPending,
+    error: isError ? 'Servidor no disponible' : null,
+  };
 }

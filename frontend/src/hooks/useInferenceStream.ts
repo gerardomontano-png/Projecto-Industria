@@ -4,8 +4,14 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import type { LocalizationDetection } from '../types';
+import { WS_URL } from '../config';
+import {
+  flushLiveInferenceFrame,
+  recordLiveInferenceFrame,
+  type LiveInferenceFrame,
+} from '../services/lastInferenceEvent';
 
-const WS_BASE = 'ws://127.0.0.1:8000/ws/inference-stream';
+const WS_BASE = `${WS_URL}/ws/inference-stream`;
 
 interface InferenceStreamOptions {
   modelId?: string;
@@ -79,8 +85,16 @@ export function useInferenceStream(
   // Serialize URL as dependency so we reconnect when any option changes
   const wsUrl = buildWsUrl(cameraId, options);
 
+  // Datos del análisis en vivo para el "último evento" guardado en IndexedDB.
+  const liveEventMetaRef = useRef<Omit<LiveInferenceFrame, 'jpeg' | 'detections'> | null>(null);
+  const { modelId, roi } = options;
+  useEffect(() => {
+    liveEventMetaRef.current = { cameraId, modelId: modelId ?? null, roi: roi ?? null };
+  }, [cameraId, modelId, roi]);
+
   useEffect(() => {
     let ws: WebSocket | null = null;
+    let latestDetections: LocalizationDetection[] = [];
 
     const timer = setTimeout(() => {
       ws = new WebSocket(wsUrl);
@@ -121,10 +135,16 @@ export function useInferenceStream(
         if (validJsonSection) {
           try {
             const meta = JSON.parse(new TextDecoder().decode(buffer.slice(4, jpegOffset)));
-            setDetections(normalizeDetections(meta?.detections ?? meta));
+            latestDetections = normalizeDetections(meta?.detections ?? meta);
           } catch {
-            setDetections([]);
+            latestDetections = [];
           }
+          setDetections(latestDetections);
+        }
+
+        const liveMeta = liveEventMetaRef.current;
+        if (liveMeta) {
+          recordLiveInferenceFrame({ ...liveMeta, jpeg, detections: latestDetections });
         }
 
         if (prevUrlRef.current) URL.revokeObjectURL(prevUrlRef.current);
@@ -135,11 +155,16 @@ export function useInferenceStream(
 
       ws.onerror = () => setError('Error en la conexión WebSocket de inferencia');
 
-      ws.onclose = () => setIsConnected(false);
+      ws.onclose = () => {
+        setIsConnected(false);
+        // Desconexión: asegura que el último frame analizado quede guardado.
+        flushLiveInferenceFrame();
+      };
     }, 0);
 
     return () => {
       clearTimeout(timer);
+      flushLiveInferenceFrame();
       if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
       if (prevUrlRef.current) {
         URL.revokeObjectURL(prevUrlRef.current);
