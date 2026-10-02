@@ -101,8 +101,11 @@ export function InferencePanel() {
   // ya no corresponden a las dimensiones naturales de la nueva imagen.
   useEffect(() => {
     if (isRestoredRef.current) return;
-    setRoiNatural(null);
-    setRoi({ x: 0, y: 0, width: 0, height: 0 });
+    const resetRoi = () => {
+      setRoiNatural(null);
+      setRoi({ x: 0, y: 0, width: 0, height: 0 });
+    };
+    resetRoi();
   }, [image]);
 
   const handleTaskChange = (next: ModelTask) => {

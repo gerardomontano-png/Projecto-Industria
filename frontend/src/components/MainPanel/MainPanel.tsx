@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Camera, CameraProtocol, ROI, Job } from '../../types/index';
+import type { Camera, CameraProtocol, Job } from '../../types/index';
 import type { ApiCamera } from '../../services/cameraApi';
 import { useCameras } from '../../hooks/useCameras';
 import { useCameraSignal } from '../../hooks/useCameraSignal';
@@ -17,8 +17,6 @@ const FALLBACK_CAMERA: Camera = {
   status: 'disconnected',
   isActive: false,
 };
-
-const mockRois: ROI[] = [];
 
 const mockResults: ResultHistoryItem[] = [
   { frameId: 'f-1.004', result: 'ok', timestamp: Date.now() - 5_000 },
@@ -56,9 +54,6 @@ function apiCameraToCamera(apiCam: ApiCamera, status: Camera['status']): Camera 
     isActive: status === 'connected',
   };
 }
-
-const SELECT_CLASS =
-  'shrink-0 h-8 px-2 rounded-lg border border-[#e2e5ea] bg-white text-[13px] text-[#393939] cursor-pointer focus:outline-[2px] focus:outline-[#2f6fe4] focus:outline-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
 
 function MainPanel() {
   const {
@@ -137,7 +132,6 @@ function MainPanel() {
         <LiveViewer
           camera={camera}
           cameraId={effectiveCameraId}
-          rois={mockRois}
           job={job}
           onToggleInspection={toggleInspection}
           // Props nuevas:
