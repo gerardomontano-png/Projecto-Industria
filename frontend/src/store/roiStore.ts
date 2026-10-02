@@ -3,7 +3,6 @@
  * Supports undo/redo via past/future stacks.
  */
 import { create } from 'zustand';
-import { roiApi } from '../services/roiApi';
 
 export interface StoredROI {
   id: string;
@@ -139,16 +138,16 @@ export const useROIStore = create<ROIStore>((set, get) => ({
   },
 
   deleteRoi(id) {
-  set((state) => ({
-    past: [...state.past, snapshot(state)],
-    future: [],
-    rois: state.rois.filter((r) => r.id !== id),
-    selectedId: state.selectedId === id ? null : state.selectedId,
-  }));
+    set((state) => ({
+      past: [...state.past, snapshot(state)],
+      future: [],
+      rois: state.rois.filter((r) => r.id !== id),
+      selectedId: state.selectedId === id ? null : state.selectedId,
+    }));
 
-  // ↓ AGREGAR cuando el backend esté listo (optimistic: el store ya actualizó)
-  roiApi.remove(id).catch(() => {
-    console.warn('[ROI] No se pudo eliminar en backend, id:', id);
-  });
+    // NOTA: el backend todavía no expone endpoints /rois (persistencia
+    // pendiente). No llamar a roiApi aquí hasta que ese endpoint exista,
+    // de lo contrario cada delete falla con 404 porque el ROI (creado con
+    // crypto.randomUUID() en el cliente) nunca fue persistido en el backend.
   },
 }));

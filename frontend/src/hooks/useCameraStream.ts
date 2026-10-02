@@ -10,8 +10,41 @@ import type { FrameWorkerResult } from '../workers/frameDeserializer';
 import { clearDetections, redrawDetections } from '../components/MainPanel/DetectionCanvas';
 import { computeContainFit } from '../utils/bboxTransform';
 
-const WS_URL = 'ws://127.0.0.1:8000/ws/stream';
+const STREAM_WS_URL = 'ws://127.0.0.1:8000/ws/stream';
 const INFERENCE_WS_URL = 'ws://127.0.0.1:8000/ws/inference-stream';
+
+interface CameraStreamOptions {
+  /** 'inference' abre /ws/inference-stream y cada frame trae sus detecciones */
+  mode?: 'stream' | 'inference';
+  modelId?: string;
+  conf?: number;
+  iou?: number;
+  inferEveryNFrames?: number;
+  roi?: { x1: number; y1: number; x2: number; y2: number } | null;
+}
+
+function buildWsUrl(cameraId: string, options: CameraStreamOptions): string {
+  const params = new URLSearchParams();
+  params.set('camera_id', cameraId);
+
+  if (options.mode === 'inference') {
+    if (options.modelId) params.set('model_id', options.modelId);
+    if (options.conf !== undefined) params.set('conf', String(options.conf));
+    if (options.iou !== undefined) params.set('iou', String(options.iou));
+    if (options.inferEveryNFrames !== undefined) {
+      params.set('infer_every_n_frames', String(options.inferEveryNFrames));
+    }
+    if (options.roi) {
+      params.set('x1', String(options.roi.x1));
+      params.set('y1', String(options.roi.y1));
+      params.set('x2', String(options.roi.x2));
+      params.set('y2', String(options.roi.y2));
+    }
+  }
+
+  const base = options.mode === 'inference' ? INFERENCE_WS_URL : STREAM_WS_URL;
+  return `${base}?${params.toString()}`;
+}
 
 // ---------------------------------------------------------------------------
 // T-12: Frame buffer
@@ -78,15 +111,6 @@ function paintFrame(
   }
 }
 
-function buildStreamUrl(cameraId: string, inferenceModelId?: string | null): string {
-  const params = new URLSearchParams({ camera_id: cameraId });
-  if (inferenceModelId) {
-    params.set('model_id', inferenceModelId);
-    return `${INFERENCE_WS_URL}?${params.toString()}`;
-  }
-  return `${WS_URL}?${params.toString()}`;
-}
-
 // ---------------------------------------------------------------------------
 // Hook result
 // ---------------------------------------------------------------------------
@@ -105,14 +129,9 @@ interface UseCameraStreamResult {
   frameMetadata: FrameMetadata | null;
 }
 
-/**
- * @param inferenceModelId Si se indica, el stream se abre contra /ws/inference-stream
- * con ese modelo de detección y cada frame trae sus detecciones. Si es null/undefined
- * se usa /ws/stream (solo video).
- */
 export function useCameraStream(
   cameraId: string,
-  inferenceModelId?: string | null
+  options: CameraStreamOptions = {}
 ): UseCameraStreamResult {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -136,7 +155,7 @@ export function useCameraStream(
   const naturalSizeRef = useRef<{ width: number; height: number } | null>(null);
   const lastDrawnRef = useRef<DrawnFrame | null>(null);
 
-  const streamUrl = buildStreamUrl(cameraId, inferenceModelId);
+  const wsUrl = buildWsUrl(cameraId, options);
 
   // T-13: ResizeObserver — runs once, canvas is always in DOM
   useEffect(() => {
@@ -240,7 +259,7 @@ export function useCameraStream(
     function connect() {
       if (destroyedRef.current) return;
 
-      const ws = new WebSocket(streamUrl);
+      const ws = new WebSocket(wsUrl);
       ws.binaryType = 'blob';
       wsRef.current = ws;
 
@@ -312,7 +331,7 @@ export function useCameraStream(
       if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
       wsRef.current = null;
     };
-  }, [streamUrl]);
+  }, [wsUrl]);
 
   return {
     canvasRef,

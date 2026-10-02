@@ -1,6 +1,9 @@
 import type { Camera, Job } from '../../types/index';
 import type { ApiModel } from '../../types';
 import { useCameraStream } from '../../hooks/useCameraStream';
+import { useMemo } from 'react';
+import { useROIStore } from '../../store/roiStore';
+import { roiToBackendParams } from '../../utils/roiUtils';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
 import { DetectionCanvas } from './DetectionCanvas';
@@ -45,19 +48,43 @@ export function LiveViewer({
   onCameraChange,
 }: LiveViewerProps) {
   const isInspectionRunning = job.status === 'running';
+  const rois = useROIStore((s) => s.rois);
+
+  const streamRoi = useMemo(() => {
+    const activeRoi = rois.find((roi) => roi.cameraId === cameraId && roi.isEnabled);
+    if (!activeRoi) return null;
+    return roiToBackendParams(activeRoi, {
+      width: camera.resolution.width,
+      height: camera.resolution.height,
+    });
+  }, [rois, cameraId, camera.resolution.width, camera.resolution.height]);
 
   // El stream de inferencia en vivo solo devuelve detecciones de modelos de localización
   const jobModel = models.find((m) => m.id === job.modelId);
   const isDetectionModel = jobModel?.task === 'localization';
-  const inferenceModelId = isInspectionRunning && isDetectionModel ? job.modelId : null;
+  const isLiveInference = isInspectionRunning && isDetectionModel;
+
+  const streamOptions = useMemo(
+    () =>
+      isLiveInference
+        ? {
+            mode: 'inference' as const,
+            modelId: job.modelId,
+            roi: streamRoi,
+          }
+        : {
+            mode: 'stream' as const,
+          },
+    [isLiveInference, job.modelId, streamRoi]
+  );
 
   const { canvasRef, detectionCanvasRef, isConnected, error, displaySize } = useCameraStream(
     cameraId,
-    inferenceModelId
+    streamOptions
   );
 
   return (
-    <div className="flex flex-col items-center gap-1 min-h-0 mt-10">
+    <div className="flex flex-col items-center gap-3 min-h-0 mt-10">
 
       {/* TopBar ahora vive aquí */}
       <TopBar
@@ -107,7 +134,7 @@ export function LiveViewer({
       />
 
       {/* Canvas container — igual que antes */}
-      <div className="relative w-full aspect-video bg-[#B1B0B0] rounded-[10px] overflow-hidden flex items-center justify-center">
+      <div className="relative w-full aspect-video bg-[#ffffff] rounded-[10px] overflow-hidden flex items-center justify-center">
         {error && <div className="text-sm font-semibold text-[#d64545]">{error}</div>}
         {!isConnected && !error && (
           <div className="text-[13px] text-[#6b7280]">Conectando stream…</div>
