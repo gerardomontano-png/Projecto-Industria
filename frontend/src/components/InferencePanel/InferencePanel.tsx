@@ -81,8 +81,11 @@ export function InferencePanel() {
   // Reinicia el ROI dibujado al cambiar de imagen: las coordenadas en píxeles
   // ya no corresponden a las dimensiones naturales de la nueva imagen.
   useEffect(() => {
-    setRoiNatural(null);
-    setRoi({ x: 0, y: 0, width: 0, height: 0 });
+    const resetRoi = () => {
+      setRoiNatural(null);
+      setRoi({ x: 0, y: 0, width: 0, height: 0 });
+    };
+    resetRoi();
   }, [image]);
 
   const handleTaskChange = (next: ModelTask) => {
