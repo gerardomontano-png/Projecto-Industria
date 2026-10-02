@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import type { Camera, CameraProtocol, Job } from '../../types/index';
-import { getCameras, type ApiCamera } from '../../services/cameraApi';
+import type { ApiCamera } from '../../services/cameraApi';
+import { useCameras } from '../../hooks/useCameras';
 import { useCameraSignal } from '../../hooks/useCameraSignal';
 import { useModels } from '../../hooks/useModels';
 import { LeftSideBar } from './LeftSidebar';
@@ -55,10 +56,14 @@ function apiCameraToCamera(apiCam: ApiCamera, status: Camera['status']): Camera 
 }
 
 function MainPanel() {
-  const [selectedCameraId, setSelectedCameraId] = useState('0');
-  const [apiCameras, setApiCameras] = useState<ApiCamera[]>([]);
-  const [noCamerasDetected, setNoCamerasDetected] = useState(false);
-  const [camerasMessage, setCamerasMessage] = useState<string | null>(null);
+  const {
+    cameras: apiCameras,
+    noCamerasDetected,
+    message: camerasMessage,
+  } = useCameras();
+  // null = el usuario aún no eligió: se usa la primera cámara que reporte el backend.
+  const [userCameraId, setUserCameraId] = useState<string | null>(null);
+  const selectedCameraId = userCameraId ?? apiCameras[0]?.id ?? '0';
 
   const { models, isLoading: isLoadingModels } = useModels();
   const [selectedModelId, setSelectedModelId] = useState('');
@@ -83,20 +88,6 @@ function MainPanel() {
     return def?.id ?? '';
   }, [selectedModelId, models]);
 
-  useEffect(() => {
-    getCameras()
-      .then(({ cameras, total, description }) => {
-        setApiCameras(cameras);
-        setSelectedCameraId(cameras[0]?.id ?? '0');
-        setNoCamerasDetected(total === 0);
-        setCamerasMessage(total === 0 ? (description ?? 'No se detectaron cámaras.') : null);
-      })
-      .catch(() => {
-        setNoCamerasDetected(true);
-        setCamerasMessage('No se pudo consultar el listado de cámaras.');
-      });
-  }, []);
-
   const activeApiCamera = apiCameras.find((cam) => cam.id === selectedCameraId) ?? null;
   const effectiveCameraId = activeApiCamera?.id ?? '0';
 
@@ -115,7 +106,7 @@ function MainPanel() {
   };
 
   const handleCameraChange = (cameraId: string) => {
-    setSelectedCameraId(cameraId);
+    setUserCameraId(cameraId);
     setJob((prev) => ({ ...prev, cameraId, status: 'idle', startedAt: undefined }));
   };
 

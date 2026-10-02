@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { InferenceResult, ModelTask, ROIRect } from '../../types';
 import { useModels } from '../../hooks/useModels';
+import { useLastInferenceEvent } from '../../hooks/useLastInferenceEvent';
+import { recordInferenceEvent } from '../../services/lastInferenceEvent';
 import {
   parseInferenceError,
   runAnomaly,
@@ -28,6 +30,17 @@ interface NormRect {
 
 const ROI_FIELDS = ['x', 'y', 'width', 'height'] as const;
 
+const TASK_LABELS: Record<ModelTask, string> = {
+  localization: 'Localización',
+  classification: 'Clasificación',
+  ocr: 'OCR',
+  anomaly: 'Anomalías',
+};
+
+function blobToFile(blob: Blob, name: string): File {
+  return blob instanceof File ? blob : new File([blob], name, { type: blob.type });
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
@@ -48,11 +61,17 @@ export function InferencePanel() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
 
+  const lastEvent = useLastInferenceEvent();
+  // true mientras lo que hay en pantalla viene del último evento recuperado: evita que
+  // los efectos de "cambió la tarea/imagen" borren el modelo, ROI y resultado restaurados.
+  const isRestoredRef = useRef(false);
+
   const modelsForTask = byTask[task];
 
   // Al cambiar de tarea, preselecciona el modelo marcado como default y limpia el resultado anterior.
   useEffect(() => {
     const applyDefaults = () => {
+      if (isRestoredRef.current) return;
       const defaultModel = modelsForTask.find((m) => m.default) ?? modelsForTask[0];
       setSelectedModelId(defaultModel?.id ?? null);
       setStatus('idle');
@@ -81,6 +100,7 @@ export function InferencePanel() {
   // Reinicia el ROI dibujado al cambiar de imagen: las coordenadas en píxeles
   // ya no corresponden a las dimensiones naturales de la nueva imagen.
   useEffect(() => {
+    if (isRestoredRef.current) return;
     const resetRoi = () => {
       setRoiNatural(null);
       setRoi({ x: 0, y: 0, width: 0, height: 0 });
@@ -89,9 +109,41 @@ export function InferencePanel() {
   }, [image]);
 
   const handleTaskChange = (next: ModelTask) => {
+    isRestoredRef.current = false;
     setTask(next);
     setImage(null);
     setReferenceImage(null);
+  };
+
+  const handleImageChange = (file: File | null) => {
+    isRestoredRef.current = false;
+    setImage(file);
+  };
+
+  // Recarga en el panel el último evento guardado en IndexedDB (imagen o frame en vivo),
+  // listo para revisarlo o volver a ejecutarlo con otro modelo/ROI.
+  const handleRestoreLastEvent = () => {
+    if (!lastEvent) return;
+    const candidates = byTask[lastEvent.task];
+    const model =
+      candidates.find((m) => m.id === lastEvent.modelId) ??
+      candidates.find((m) => m.default) ??
+      candidates[0];
+
+    isRestoredRef.current = true;
+    setTask(lastEvent.task);
+    setSelectedModelId(model?.id ?? null);
+    setImage(blobToFile(lastEvent.image, lastEvent.imageName));
+    setReferenceImage(
+      lastEvent.referenceImage
+        ? blobToFile(lastEvent.referenceImage, lastEvent.referenceImageName ?? 'referencia')
+        : null
+    );
+    setRoiEnabled(!!lastEvent.roi);
+    setRoi(lastEvent.roi ?? { x: 0, y: 0, width: 0, height: 0 });
+    setResult(lastEvent.result);
+    setStatus('success');
+    setErrorMessage(null);
   };
 
   const getNormPointFromEvent = (e: ReactPointerEvent<HTMLDivElement>): { x: number; y: number } => {
@@ -177,6 +229,17 @@ export function InferencePanel() {
       }
       setResult(next);
       setStatus('success');
+      void recordInferenceEvent({
+        source: 'image',
+        task,
+        modelId: selectedModelId,
+        image,
+        imageName: image.name,
+        referenceImage: task === 'anomaly' ? (referenceImage ?? undefined) : undefined,
+        referenceImageName: task === 'anomaly' ? referenceImage?.name : undefined,
+        roi: roiParam ?? null,
+        result: next,
+      });
     } catch (err) {
       setErrorMessage(parseInferenceError(err));
       setStatus('error');
@@ -206,7 +269,7 @@ export function InferencePanel() {
           </section>
 
           <section className="bg-white border border-[#e2e5ea] rounded-[10px] py-3.5 px-4 flex flex-col gap-3">
-            <ImageDropzone label="Imagen a analizar" file={image} onChange={setImage} />
+            <ImageDropzone label="Imagen a analizar" file={image} onChange={handleImageChange} />
             {task === 'anomaly' && (
               <ImageDropzone
                 label="Imagen de referencia"
@@ -289,6 +352,27 @@ export function InferencePanel() {
 
           {errorMessage && (
             <p className="text-[13px] font-semibold text-[#d64545]">{errorMessage}</p>
+          )}
+
+          {lastEvent && (
+            <section className="bg-white border border-[#e2e5ea] rounded-[10px] py-3.5 px-4 flex flex-col gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.04em] text-[#6b7280]">
+                Último evento
+              </p>
+              <p className="text-[12px] text-[#1f2430]">
+                {TASK_LABELS[lastEvent.task]} ·{' '}
+                {lastEvent.source === 'live'
+                  ? `en vivo, cámara ${lastEvent.cameraId ?? '?'}`
+                  : lastEvent.imageName}
+              </p>
+              <p className="text-[11px] text-[#6b7280]">
+                {new Date(lastEvent.createdAt).toLocaleString()}
+                {lastEvent.roi ? ' · con ROI' : ''}
+              </p>
+              <ButtonCommon variant="secondary" onClick={handleRestoreLastEvent}>
+                Recuperar
+              </ButtonCommon>
+            </section>
           )}
         </aside>
 
