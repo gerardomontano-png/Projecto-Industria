@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from 'react';
 import ModeToggle from "./CommonComponents/Button/ModeToggle";
 
 export type AppView = 'monitor' | 'inference';
@@ -5,6 +6,8 @@ export type AppView = 'monitor' | 'inference';
 interface HeaderProps {
   view: AppView;
   onViewChange: (view: AppView) => void;
+  isDarkMode: boolean;
+  setIsDarkMode: Dispatch<SetStateAction<boolean>>;
 }
 
 function Header({ view, onViewChange, isDarkMode, setIsDarkMode }: HeaderProps) {

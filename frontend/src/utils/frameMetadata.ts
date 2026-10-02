@@ -125,7 +125,7 @@ export function splitFrameMessage(buffer: ArrayBuffer): { rawMeta: unknown; jpeg
   const jpegOffset = 4 + jsonLen;
   if (jpegOffset >= buffer.byteLength) return { rawMeta: null, jpeg: buffer };
 
-  let rawMeta: unknown = null;
+  let rawMeta: unknown;
   try {
     rawMeta = JSON.parse(new TextDecoder().decode(buffer.slice(4, jpegOffset)));
   } catch {

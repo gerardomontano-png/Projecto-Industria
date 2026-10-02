@@ -3,8 +3,6 @@ import Header, { type AppView } from './components/Header';
 import MainPanel from './components/MainPanel/MainPanel';
 import { InferencePanel } from './components/InferencePanel/InferencePanel';
 import './App.css';
-import { Moon, Sun } from 'lucide-react';
-import ModeToggle from './components/CommonComponents/Button/ModeToggle';
 
 function App() {
   const [view, setView] = useState<AppView>('monitor');

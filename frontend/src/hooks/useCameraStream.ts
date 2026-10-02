@@ -1,5 +1,5 @@
 /**
- * T-12: FrameBuffer — drop-oldest circular buffer (maxSize=3)
+ * T-12: FrameBuffer (utils/frameBuffer) — drop-oldest circular buffer (maxSize=3)
  * T-13: Canvas rAF draw loop, ResizeObserver, Worker integration, bbox overlay
  * T-15: Exponential backoff reconnect
  * T-16: Watchdog for frozen streams
@@ -7,8 +7,9 @@
 import { useState, useEffect, useRef } from 'react';
 import type { FrameMetadata } from '../types';
 import type { FrameWorkerResult } from '../workers/frameDeserializer';
-import { clearDetections, redrawDetections } from '../components/MainPanel/DetectionCanvas';
+import { clearDetections, redrawDetections } from '../utils/detectionDrawing';
 import { computeContainFit } from '../utils/bboxTransform';
+import { FrameBuffer } from '../utils/frameBuffer';
 
 const STREAM_WS_URL = 'ws://127.0.0.1:8000/ws/stream';
 const INFERENCE_WS_URL = 'ws://127.0.0.1:8000/ws/inference-stream';
@@ -44,40 +45,6 @@ function buildWsUrl(cameraId: string, options: CameraStreamOptions): string {
 
   const base = options.mode === 'inference' ? INFERENCE_WS_URL : STREAM_WS_URL;
   return `${base}?${params.toString()}`;
-}
-
-// ---------------------------------------------------------------------------
-// T-12: Frame buffer
-// ---------------------------------------------------------------------------
-
-/** Un frame y SU metadata: viajan juntos para que overlay y datos no se desfasen */
-interface BufferedFrame {
-  jpeg: ArrayBuffer;
-  metadata: FrameMetadata;
-}
-
-class FrameBuffer {
-  private items: BufferedFrame[] = [];
-  private readonly maxSize: number;
-
-  constructor(maxSize = 3) {
-    this.maxSize = maxSize;
-  }
-
-  push(item: BufferedFrame): void {
-    if (this.items.length >= this.maxSize) {
-      this.items.shift(); // drop oldest
-    }
-    this.items.push(item);
-  }
-
-  pop(): BufferedFrame | undefined {
-    return this.items.shift();
-  }
-
-  clear(): void {
-    this.items = [];
-  }
 }
 
 // ---------------------------------------------------------------------------
