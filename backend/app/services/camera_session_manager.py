@@ -96,15 +96,34 @@ class DeliveryMetrics:
 
 
 @dataclass
+class InferenceMetrics:
+    """
+    Inferencia en vivo: frames analizados y frames que no se analizaron.
+
+    `frames_skipped` incluye los que se saltan a propósito por
+    `infer_every_n_frames` y los que se pierden porque la inferencia tardó más.
+    """
+
+    frames_inferred: int = 0
+    frames_skipped: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "frames_inferred": self.frames_inferred,
+            "frames_skipped": self.frames_skipped,
+        }
+
+
+@dataclass
 class CameraSession:
     camera_id: str
     capture: CameraCapture
     status: SessionStatus = SessionStatus.STREAMING
     active_client: Optional[str] = None
-    last_frame: Optional[np.ndarray] = None
     last_frame_ts: float = 0.0
     metrics: SessionMetrics = field(default_factory=SessionMetrics)
     delivery: DeliveryMetrics = field(default_factory=DeliveryMetrics)
+    inference: InferenceMetrics = field(default_factory=InferenceMetrics)
     errors: deque = field(
         default_factory=lambda: deque(maxlen=MAX_ERROR_HISTORY),
         repr=False,
@@ -114,14 +133,20 @@ class CameraSession:
     # Lectura de cámara en curso (o la última): mientras no termine, no se cierra.
     pending_read: Optional[asyncio.Future] = field(default=None, repr=False)
 
+    @property
+    def last_frame(self) -> Optional[np.ndarray]:
+        """Frame más reciente. Vive solo en el slot: la sesión no guarda copia."""
+        packet = self.frames.latest
+        return packet.frame if packet is not None else None
+
     def update_frame(self, frame: Optional[np.ndarray]) -> None:
-        """Actualiza el último frame y avanza las métricas."""
+        """Publica el frame en el slot (reemplaza al anterior) y avanza las métricas."""
         if frame is None:
             self.metrics.tick_drop()
             return
-        self.last_frame = frame
         self.last_frame_ts = time.time()
         self.metrics.tick_frame()
+        self.frames.publish(frame, self.last_frame_ts)
 
     def record_error(self, message: str) -> None:
         """Registra un error y transiciona el estado a ERROR."""
@@ -136,6 +161,8 @@ class CameraSession:
             "last_frame_ts": self.last_frame_ts or None,
             "metrics": self.metrics.to_dict(),
             "delivery": self.delivery.to_dict(),
+            "inference": self.inference.to_dict(),
+            "frame_buffer": self.frames.stats(),
             "errors": [
                 {"timestamp": e.timestamp, "message": e.message}
                 for e in self.errors
@@ -211,7 +238,6 @@ async def _capture_loop(session: CameraSession) -> None:
                 session.record_error(_NO_FRAMES_MESSAGE)
                 session.frames.close(_NO_FRAMES_MESSAGE, code=NO_FRAMES_CODE)
                 return
-            session.frames.publish(frame, session.last_frame_ts)
 
             sleep_for = interval - (time.monotonic() - t0)
             if sleep_for > 0:

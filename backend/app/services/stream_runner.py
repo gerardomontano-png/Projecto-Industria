@@ -112,7 +112,10 @@ async def _inference_loop(
         # más que eso, se toma directamente el más reciente.
         after = last_seq + every_n_frames - 1 if last_seq else 0
         packet = await session.frames.next(after)
+        if last_seq:
+            session.inference.frames_skipped += packet.seq - last_seq - 1
         detections.items = await loop.run_in_executor(None, infer, packet.frame)
+        session.inference.frames_inferred += 1
         last_seq = packet.seq
 
 

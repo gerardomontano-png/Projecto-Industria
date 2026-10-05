@@ -8,6 +8,7 @@ Ejecutar:
 """
 
 import asyncio
+import dataclasses
 import time
 from unittest.mock import MagicMock, patch
 
@@ -238,3 +239,63 @@ def test_metrics_to_dict_tiene_claves_esperadas():
     d = metrics.to_dict()
 
     assert set(d.keys()) == {"frames_total", "frames_dropped", "fps_current", "uptime_seconds"}
+
+
+# ── Último frame y descarte (M06) ─────────────────────────────────────────────
+
+def test_sesion_no_guarda_copia_propia_del_frame():
+    # El frame más reciente vive solo en el slot de capacidad 1.
+    campos = {f.name for f in dataclasses.fields(CameraSession)}
+    assert "last_frame" not in campos
+
+    session = CameraSession(camera_id="0", capture=_mock_capture())
+    frames = [np.full((4, 4, 3), i, dtype=np.uint8) for i in range(3)]
+    for frame in frames:
+        session.update_frame(frame)
+
+    assert session.last_frame is frames[-1]
+    assert session.frames.latest.frame is frames[-1]
+
+
+def test_update_frame_reemplaza_el_frame_y_cuenta_descartes():
+    session = CameraSession(camera_id="0", capture=_mock_capture())
+    for i in range(5):
+        session.update_frame(np.full((4, 4, 3), i, dtype=np.uint8))
+    session.update_frame(None)
+
+    buffer = session.to_dict()["frame_buffer"]
+    assert buffer == {
+        "capacity": 1,
+        "frames_retained": 1,
+        "frames_published": 5,
+        "frames_consumed": 0,
+        "frames_discarded": 4,
+    }
+    # Las lecturas fallidas no se confunden con descartes.
+    assert session.metrics.frames_dropped == 1
+
+
+def test_get_status_expone_metricas_de_descarte():
+    capture = _mock_capture()
+    with patch("app.services.camera_session_manager.open_camera", return_value=capture):
+        manager = _manager()
+
+        async def scenario():
+            await manager.acquire("0", "cliente-1")
+            await asyncio.sleep(0.1)
+            status = manager.get_status()
+            await manager.release("cliente-1")
+            return status
+
+        status = run(scenario())
+
+    assert set(status["frame_buffer"]) == {
+        "capacity",
+        "frames_retained",
+        "frames_published",
+        "frames_consumed",
+        "frames_discarded",
+    }
+    assert status["frame_buffer"]["frames_published"] == status["metrics"]["frames_total"]
+    assert set(status["delivery"]) == {"frames_sent", "frames_skipped"}
+    assert set(status["inference"]) == {"frames_inferred", "frames_skipped"}

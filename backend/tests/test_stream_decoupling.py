@@ -385,3 +385,47 @@ def test_release_cierra_de_inmediato_si_la_lectura_termina_dentro_del_margen():
     capture = asyncio.run(scenario())
 
     assert capture.release_calls == 1
+
+
+# ── Métricas de descarte (M06) ────────────────────────────────────────────────
+
+def test_metricas_cuadran_frames_capturados_y_descartados():
+    async def scenario():
+        ws = FakeWebSocket(send_delay=0.2)
+        session, snapshot = await _serve_for(
+            ws, FakeCapture(), CameraSessionManager(), duration=1.0
+        )
+        return session, snapshot
+
+    session, snapshot = asyncio.run(scenario())
+    buffer = session.frames.stats()
+
+    # Todo frame capturado se consumió, se descartó o es el único retenido.
+    assert buffer["frames_published"] == session.metrics.frames_total
+    assert buffer["frames_published"] == (
+        buffer["frames_consumed"] + buffer["frames_discarded"] + session.frames.frames_pending
+    )
+    # El cliente lento provoca descartes que quedan visibles en el estado.
+    assert snapshot["frame_buffer"]["frames_discarded"] > 0
+    assert snapshot["frame_buffer"]["capacity"] == 1
+
+
+def test_metricas_de_inferencia_cuentan_frames_analizados_y_saltados():
+    def slow_infer(frame):
+        time.sleep(0.1)
+        return []
+
+    async def scenario():
+        ws = FakeWebSocket()
+        _, snapshot = await _serve_for(
+            ws, FakeCapture(), CameraSessionManager(), duration=1.0, infer=slow_infer
+        )
+        return snapshot
+
+    snapshot = asyncio.run(scenario())
+    inference = snapshot["inference"]
+
+    assert inference["frames_inferred"] >= 3
+    # La inferencia (100 ms) es más lenta que la captura: se salta frames.
+    assert inference["frames_skipped"] > inference["frames_inferred"]
+    assert inference["frames_inferred"] < snapshot["metrics"]["frames_total"]
