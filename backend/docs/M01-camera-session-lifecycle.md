@@ -63,7 +63,8 @@ La sesión agrupa datos que deben cambiar de forma coherente:
 
 - `capture`: único recurso físico o fuente de video abierta;
 - `active_client`: token del propietario;
-- `last_frame` y `last_frame_ts`: frame más reciente de esa sesión;
+- `last_frame` y `last_frame_ts`: frame más reciente de esa sesión (desde M06,
+  `last_frame` se lee del `FrameSlot`, la única copia retenida);
 - métricas: frames capturados, descartados, FPS y tiempo activo;
 - errores: historial acotado con causa y momento;
 - estado: vista pública de la fase estable actual.

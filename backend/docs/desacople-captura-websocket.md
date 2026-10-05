@@ -71,7 +71,7 @@ Cambios en el JSON de cada frame (aditivos):
 "delivery": {"frames_sent": 11, "frames_skipped": 56}
 ```
 
-`metrics.frames_total` cuenta frames capturados; `delivery` cuenta lo que llegó al cliente.
+`metrics.frames_total` cuenta frames capturados; `delivery` cuenta lo que llegó al cliente. Desde M06 también se exponen `frame_buffer` (frames descartados por el slot) e `inference`; ver `docs/M06-descarte-controlado-frames.md`.
 
 ## Pruebas
 
