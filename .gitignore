@@ -55,6 +55,18 @@ Thumbs.db
 *.log
 logs/
 
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+# Las dependencias se instalan con `npm ci` a partir de frontend/package-lock.json.
+node_modules/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+
+# npm ejecutado por error en la raíz: el proyecto de Node vive en frontend/.
+# Solo aplica a la raíz; frontend/package.json y frontend/package-lock.json sí se suben.
+/package.json
+/package-lock.json
+
 .venv/
 .venv311/
 __pycache__/
