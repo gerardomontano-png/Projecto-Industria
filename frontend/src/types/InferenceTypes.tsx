@@ -35,6 +35,23 @@ export interface LocalizationDetection {
   bbox: BoundingBoxXYXY;
 }
 
+/** Metadata JSON adjunta a cada frame binario de /ws/stream y /ws/inference-stream */
+export interface StreamFrameMetadata {
+  cameraId: string;
+  fps: number;
+  /** Epoch en segundos asignado por el backend al codificar el frame */
+  timestamp: number;
+  /** Vacío en /ws/stream; en coordenadas de píxel de la imagen completa */
+  detections: LocalizationDetection[];
+}
+
+/** Un frame del stream ya deserializado: el JPEG junto con SU metadata */
+export interface StreamFrame {
+  /** null si el mensaje no traía cabecera JSON o era inválida */
+  meta: StreamFrameMetadata | null;
+  jpeg: ArrayBuffer;
+}
+
 export interface LocalizationResult {
   task: 'localization';
   modelId: string;
