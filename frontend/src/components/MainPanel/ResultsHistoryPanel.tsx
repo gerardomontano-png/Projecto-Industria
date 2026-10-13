@@ -19,14 +19,14 @@ function formatRelativeTime(timestamp: Timestamp): string {
 
 export function ResultsHistoryPanel({ results }: ResultsHistoryPanelProps) {
   return (
-    <aside className="bg-white border border-[#e2e5ea] rounded-[10px] py-3.5 px-4 flex flex-col min-h-0">
-      <p className="text-xs font-semibold uppercase tracking-[0.04em] text-gray-500 mb.2.5">
-        Últimos resultados
-      </p>
-      <div className="flex flex-col gap-2.5 overflow-y-auto">
+    <aside className="bg-white dark:bg-[#2e2d2d] rounded-[10px] flex flex-col h-screen min-h-0">
+      <div className="flex items-center justify-between px-4 py-3.5">
+        <span className="text-[18px] font-semibold text-[#393939] dark:text-white">Frames</span>
+      </div>
+      <div className="flex flex-col gap-2.5 flex-1 min-h-0 px-2 overflow-y-scroll">
         {results.map((item) => (
-          <div key={item.frameId} className="border border-[#f1f2f4] rounded-lg overflow-hidden">
-            <div className="h-22.5 bg-[#f1f2f4] flex items-center justify-center">
+          <div key={item.frameId} className="rounded-lg overflow-hidden shrink-0">
+            <div className="h-30 bg-[#F7F7F7] dark:bg-[#6D6D6D] flex items-center justify-center">
               {item.thumbnailUrl ? (
                 <img src={item.thumbnailUrl} alt={`Frame ${item.frameId}`} />
               ) : (

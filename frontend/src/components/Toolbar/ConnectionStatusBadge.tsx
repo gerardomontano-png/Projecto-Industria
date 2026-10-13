@@ -23,7 +23,7 @@ interface ConnectionStatusBadgeProps {
 }
 
 const badgeClasses =
-  'inline-flex select-none items-center gap-[7px] rounded-full bg-[#ffffff] px-5 py-1.5 text-xs font-semibold';
+  'inline-flex select-none items-center gap-[7px] rounded-full bg-[#ffffff] px-5 py-1.5 text-xs font-semibold dark:bg-[#2d2d2d]';
 
 const dotBaseClasses = 'h-[9px] w-[9px] shrink-0 rounded-full';
 
@@ -37,9 +37,9 @@ const dotColorClasses: Record<CameraConnectionStatus, string> = {
 
 const pulsingClass = '[animation:pulse_1.1s_ease-in-out_infinite]';
 
-const labelClasses = 'leading-none text-[#1f2430]';
+const labelClasses = 'leading-none text-[#1f2430] dark:text-white';
 
-const cameraNameClasses = 'font-normal text-[#6b7280]';
+const cameraNameClasses = 'font-normal text-[#6b7280] dark:text-white';
 
 const STATUS_META: Record<CameraConnectionStatus, { label: string; colorClass: string }> = {
   connected: { label: 'Conectado', colorClass: 'dotGreen' },
@@ -90,23 +90,23 @@ export function ConnectionStatusBadge({
 
       {/* Popover */}
       <div
-        className="absolute bottom-full left-1/2 z-50 mb-1.5 w-full -translate-x-1/2 translate-y-2 rounded-2xl bg-white p-3 shadow-lg opacity-0 invisible transition-all duration-200 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0"
+        className="absolute bottom-full left-1/2 z-50 mb-1.5 w-full -translate-x-1/2 translate-y-2 rounded-2xl bg-white dark:bg-[#2E2D2D] p-3 shadow-lg opacity-0 invisible transition-all duration-200 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0"
       >
-        <h5 className="text-center font-bold text-[#393939] text-[12px]">
+        <h5 className="text-center font-bold text-[#393939]  dark:text-white text-[12px]">
           Cámara
         </h5>
 
-        <div className="flex justify-between border-b border-gray-200 py-0 text-[10px]">
+        <div className="flex justify-between border-b border-gray-200 py-0 text-[10px] dark:text-white">
           <span className='font-semibold'>Cámara actual</span>
           <span className='font-light'>{cameraName ?? 'Sin cámara'}</span>
         </div>
 
-        <div className="flex justify-between border-b border-gray-200 py-0 text-[10px]">
+        <div className="flex justify-between border-b border-gray-200 py-0 text-[10px] dark:text-white">
           <span className='font-semibold'>Dirección IP</span>
           <span className='font-light'></span>
         </div>
 
-        <div className="flex justify-between py-0 text-[10px]">
+        <div className="flex justify-between py-0 text-[10px] dark:text-white">
           <span className='font-semibold'>Resolución y FPS</span>
           <span className='font-light'>1920 × 1080, 30</span>
         </div>

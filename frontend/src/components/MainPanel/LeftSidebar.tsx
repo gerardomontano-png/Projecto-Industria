@@ -1,17 +1,9 @@
 import { useState } from 'react';
-import type { LucideIcon } from 'lucide-react';
 import {
-  Image,
-  Camera,
-  Cpu,
-  ScanSearch,
-  BarChart2,
-  HelpCircle,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
 } from 'lucide-react';
-import { ROICoordinatesPanel } from './ROICoordinatesPanel';
 import { Ayuda, Entrenamiento, Imagen, Inspeccion, Resultados, Submenu } from '../CommonComponents/Icons/IconCommon'
 
 interface NavItem {
@@ -32,17 +24,11 @@ const NAV_ITEMS: NavItem[] = [
 interface LeftSidebarProps {
   collapsed?: boolean;
   onCollapse?: () => void;
-  cameraId: string;
-  naturalWidth?: number;
-  naturalHeight?: number;
 }
 
 export function LeftSideBar({
   collapsed = false,
   onCollapse,
-  cameraId,
-  naturalWidth,
-  naturalHeight,
 }: LeftSidebarProps) {
   const [openSections, setOpenSections] = useState<string[]>(['Imagen']);
   const [activeItem, setActiveItem] = useState<string | null>(null);
@@ -54,16 +40,16 @@ export function LeftSideBar({
   };
 
   return (
-    <aside className="flex flex-col bg-white rounded-2xl border-[#e2e5ea] w-52 shrink-0 overflow-y-auto max-h-full">
+    <aside className="flex flex-col bg-white dark:bg-[#2E2D2D] rounded-2xl w-52 border-[#e2e5ea] shrink-0 overflow-y-auto h-screen">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#e2e5ea]">
+      <div className="flex items-center justify-between px-4 py-3.5">
         {!collapsed && (
-          <span className="text-[15px] font-semibold text-[#393939]">Herramientas</span>
+          <span className="text-[18px] font-semibold text-[#393939] dark:text-white">Herramientas</span>
         )}
         <button
           type="button"
           onClick={onCollapse}
-          className="text-[#6b7280] hover:text-[#393939] transition-colors cursor-pointer ml-auto"
+          className="text-[#6b7280] hover:text-[#393939] dark:text-white dark:hover:text-[#d9d9d9] transition-colors cursor-pointer ml-auto"
         >
           <ChevronsLeft size={18} />
         </button>
@@ -76,20 +62,20 @@ export function LeftSideBar({
           const hasChildren = children.length > 0;
 
           return (
-            <div key={label} className="mx-1 mb-2 bg-[#F7F7F7] rounded-xl">
+            <div key={label} className="mx-1 mb-2 bg-[#F7F7F7] dark:bg-[#404040] rounded-xl">
               {/* Section header */}
               <button
                 type="button"
                 onClick={() => hasChildren && toggle(label)}
-                className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-semibold text-[#1f2430] transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] font-semibold text-[#1f2430] dark:text-white transition-colors cursor-pointer"
               >
                 {hasChildren ? (
-                  isOpen ? <ChevronDown size={14} className="text-[#6b7280] shrink-0" />
-                           : <ChevronRight size={14} className="text-[#6b7280] shrink-0" />
+                  isOpen ? <ChevronDown size={14} className="text-[#6b7280] dark:text-white shrink-0" />
+                           : <ChevronRight size={14} className="text-[#6b7280] dark:text-white shrink-0" />
                 ) : (
                   <span className="w-3.5 shrink-0" />
                 )}
-                <Icon size={15} className="shrink-0 text-[#6b7280]" />
+                <Icon size={15} className="shrink-0 text-[#6b7280] dark:text-white" />
                 {label}
               </button>
 
@@ -123,9 +109,12 @@ export function LeftSideBar({
                         type="button"
                         onClick={() => setActiveItem(child)}
                         className={`ml-10 w-full text-left px-2 text-[13px] transition-colors cursor-pointer ${
+                          // aqui mandar llamar el menu de opciones [onlcick] (MenuOptions.tsx) que se muestre el correspondiente, hay que poner que 
+                          // mientras no se este activo alguno entonces no se podrá acceder a la funcionalidad, por ejemplo, los ROI, si no se tiene
+                          // seleccionada la funcionalidad en la barra entonces no se deberían poder cambiar los roi, solo la iluminación
                           isActive
-                            ? 'text-[#393939] font-semibold'
-                            : 'border-transparent text-[#6b7280] hover:text-[#1f2430]'
+                            ? 'text-[#393939] dark:text-white font-semibold'
+                            : 'border-transparent text-[#6b7280] dark:text-white hover:text-[#1f2430] dark:hover:text-[#D9D9D9]'
                         }`}
                       >
                         {child}
@@ -133,16 +122,6 @@ export function LeftSideBar({
                     </div>
                   );
                 })} 
-
-                  {label === 'Imagen' && activeItem === 'ROI' && (
-                    <div className="px-3 pb-2">
-                      <ROICoordinatesPanel
-                        cameraId={cameraId}
-                        naturalWidth={naturalWidth}
-                        naturalHeight={naturalHeight}
-                      />
-                    </div>
-                  )}
                 </div>
               )}
             </div>

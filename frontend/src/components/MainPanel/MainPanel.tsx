@@ -131,13 +131,13 @@ function MainPanel() {
 
   return (
     <div className="font-inter flex flex-col h-full w-full bg-[#FAF9F9] dark:bg-[#393939] noise-[178,100,5] text-[#393939]">
-      {noCamerasDetected && (
+      {/* {noCamerasDetected && (
         <p className="mx-4 mt-3 rounded-lg bg-[rgba(224,160,32,0.12)] px-3 py-2 text-[13px] font-medium text-[#8a6410]">
           {camerasMessage}
         </p>
-      )}
+      )} */}
 
-      <div className="flex-1 grid grid-cols-[260px_1fr_280px] gap-4 p-4 min-h-0">
+      <div className="flex-1 grid grid-cols-[260px_1fr_260px] gap-4 p-4 min-h-0">
         <LeftSideBar
           cameraId={effectiveCameraId}
           naturalWidth={camera.resolution.width}

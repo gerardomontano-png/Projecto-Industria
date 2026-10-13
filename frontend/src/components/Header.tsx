@@ -1,4 +1,6 @@
+import { ButtonCommon } from "./CommonComponents";
 import ModeToggle from "./CommonComponents/Button/ModeToggle";
+import { Basic, FlechaRegresar} from "./CommonComponents/Icons/IconCommon";
 
 export type AppView = 'monitor' | 'inference';
 
@@ -9,17 +11,25 @@ interface HeaderProps {
 
 function Header({ view, onViewChange, isDarkMode, setIsDarkMode }: HeaderProps) {
   return (
-    <header className="inter w-full h-[60px] flex items-center justify-between px-5 bg-white border-b border-gray-200 box-border">
-      <div className="w-[100px] flex items-center">{/* aquí luego va un botón o logo */}</div>
-
-      <p className="inter text-[29px] font-semibold text- m-0 text-[#393939]">
-        Título de la Herramienta
+    <header className="inter w-full h-[60px] flex items-center justify-between px-5 bg-white dark:bg-[#2E2D2D]">
+      <div className="flex items-center">
+        {view === 'monitor' ? "" : 
+        <ButtonCommon
+          variant="secondary"
+          size="simple"
+          onClick={() => onViewChange('monitor')}
+          icon={<FlechaRegresar/>}
+        >
+          Regresar
+        </ButtonCommon>}
+      </div>
+      <p className="absolute left-1/2 -translate-x-1/2 text-[22px] font-normal text- m-0 text-[#393939] dark:text-white">
+        Título de la Herramienta (?)
       </p>
 
-      <div className="min-w-[100px] flex items-center justify-end gap-2">
-  
+      <div className="flex items-center justify-end gap-2">
         <ModeToggle isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode}/>
-        <button
+        {/* <button
           type="button"
           onClick={() => onViewChange('monitor')}
           className={`h-[34px] px-[14px] rounded-lg border font-['Inter'] text-[13px] font-semibold cursor-pointer ${
@@ -29,8 +39,15 @@ function Header({ view, onViewChange, isDarkMode, setIsDarkMode }: HeaderProps) 
           }`}
         >
           Monitoreo en vivo
-        </button>
-        <button
+        </button> */}
+        <ButtonCommon
+          size="large"
+          onClick={() => onViewChange('inference')}
+          icon={<Basic/>}
+        >
+          P. de inferencia
+        </ButtonCommon>
+        {/* <button
           type="button"
           onClick={() => onViewChange('inference')}
           className={`h-[34px] px-[14px] rounded-lg border font-['Inter'] text-[13px] font-semibold cursor-pointer ${
@@ -40,7 +57,7 @@ function Header({ view, onViewChange, isDarkMode, setIsDarkMode }: HeaderProps) 
           }`}
         >
           Pruebas de inferencia
-        </button>
+        </button> */}
       </div>
     </header>
   );

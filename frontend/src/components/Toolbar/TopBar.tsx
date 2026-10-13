@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { ConnectionStatusBadge } from './ConnectionStatusBadge';
-import type { CameraConnectionStatus } from '../../types/indexTypes';
+import type { CameraConnectionStatus, Job } from '../../types/indexTypes';
 import { ButtonCommon } from '../CommonComponents/Button/ButtonCommon';
-import { CameraSparklesIcon } from '../CommonComponents/Icons/IconCommon.tsx';
+import { CameraSparklesIcon, InspectIcon } from '../CommonComponents/Icons/IconCommon.tsx';
 import type { Camera, Model } from '../../types/index';
 
 interface TopBarProps {
@@ -13,6 +13,8 @@ interface TopBarProps {
   rightSlot?: ReactNode;
   camera: Camera;
   model: Model;
+  job: Job;
+  onToggleInspection: () => void;
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -28,7 +30,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
  * Sustituye el header inline de MainPanel para que el indicador
  * de estado sea un componente propio y reutilizable.
  */
-export function TopBar({ title, status, cameraName, rightSlot, camera }: TopBarProps) {
+export function TopBar({status, cameraName, job, onToggleInspection}: TopBarProps) {
+  const isInspectionRunning = job.status === 'running';
   const resolvedStatus = status ?? 'disconnected';
   const resolvedCameraName = cameraName ?? '';
 
@@ -36,13 +39,25 @@ export function TopBar({ title, status, cameraName, rightSlot, camera }: TopBarP
     <header
       className="w-full flex justify-between shrink-0 items-center gap-4 bg-transparent" role="banner">
       <ConnectionStatusBadge status={resolvedStatus} cameraName={resolvedCameraName}/>
-      <ButtonCommon
-          size="large"
-          // onClick={() => }
-          icon={<CameraSparklesIcon/>}
-        >
-          Realizar trigger
+      <div className='flex gap-1.5'>
+        <ButtonCommon
+            size="large"
+            // onClick={() => }
+            icon={<CameraSparklesIcon/>}
+          >
+            Realizar trigger
         </ButtonCommon>
+        <ButtonCommon
+          variant="primary2nd"
+          size ="large"
+          isActive={isInspectionRunning}
+          onClick={onToggleInspection}
+          aria-pressed={isInspectionRunning}
+          icon={<InspectIcon/>}
+        >
+          Iniciar inspección
+        </ButtonCommon>
+      </div>
     </header>
   );
 }
