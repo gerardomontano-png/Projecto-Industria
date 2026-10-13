@@ -1,12 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
-import type { Camera, CameraProtocol, ROI, Job, Model } from '../../types/index';
-import type { ApiModel } from '../../types';
-import { getCameras, type ApiCamera } from '../../services/cameraApi';
+import { useState, useMemo } from 'react';
+import type { Camera, CameraProtocol, Job } from '../../types/index';
+import type { ApiCamera } from '../../services/cameraApi';
+import { useCameras } from '../../hooks/useCameras';
 import { useCameraSignal } from '../../hooks/useCameraSignal';
 import { useModels } from '../../hooks/useModels';
 import { LeftSideBar } from './LeftSidebar';
 import { LiveViewer } from './LiveViewer';
-import { TopBar } from '../Toolbar';
 import { ResultsHistoryPanel, type ResultHistoryItem } from './ResultsHistoryPanel';
 
 const FALLBACK_CAMERA: Camera = {
@@ -19,8 +18,6 @@ const FALLBACK_CAMERA: Camera = {
   isActive: false,
 };
 
-const mockRois: ROI[] = [];
-
 const mockResults: ResultHistoryItem[] = [
   { frameId: 'f-1.004', result: 'ok', timestamp: Date.now() - 5_000 },
   { frameId: 'f-1.003', result: 'ok', timestamp: Date.now() - 12_000 },
@@ -28,13 +25,6 @@ const mockResults: ResultHistoryItem[] = [
   { frameId: 'f-1.001', result: 'ok', timestamp: Date.now() - 33_000 },
   { frameId: 'f-1.000', result: 'ok', timestamp: Date.now() - 40_000 },
 ];
-
-const TASK_LABELS: Record<string, string> = {
-  localization: 'Detección YOLO',
-  classification: 'Clasificación',
-  ocr: 'OCR',
-  anomaly: 'Anomalías',
-};
 
 const KNOWN_PROTOCOLS: CameraProtocol[] = [
   'usb3',
@@ -65,26 +55,15 @@ function apiCameraToCamera(apiCam: ApiCamera, status: Camera['status']): Camera 
   };
 }
 
-// Convierte ApiModel (respuesta de /models) al tipo interno Model usado por la UI
-function apiModelToModel(m: ApiModel): Model {
-  return {
-    id: m.id,
-    name: `${TASK_LABELS[m.task] ?? m.task} — ${m.id}`,
-    architecture: 'yolov8',
-    classes: [],
-    confidenceThreshold: 0.25,
-    isActive: m.default && m.available && m.enabled,
-  };
-}
-
-const SELECT_CLASS =
-  'shrink-0 h-8 px-2 rounded-lg border border-[#e2e5ea] bg-white text-[13px] text-[#1f2430] cursor-pointer focus:outline-[2px] focus:outline-[#2f6fe4] focus:outline-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
-
 function MainPanel() {
-  const [selectedCameraId, setSelectedCameraId] = useState('0');
-  const [apiCameras, setApiCameras] = useState<ApiCamera[]>([]);
-  const [noCamerasDetected, setNoCamerasDetected] = useState(false);
-  const [camerasMessage, setCamerasMessage] = useState<string | null>(null);
+  const {
+    cameras: apiCameras,
+    noCamerasDetected,
+    message: camerasMessage,
+  } = useCameras();
+  // null = el usuario aún no eligió: se usa la primera cámara que reporte el backend.
+  const [userCameraId, setUserCameraId] = useState<string | null>(null);
+  const selectedCameraId = userCameraId ?? apiCameras[0]?.id ?? '0';
 
   const { models, isLoading: isLoadingModels } = useModels();
   const [selectedModelId, setSelectedModelId] = useState('');
@@ -109,38 +88,12 @@ function MainPanel() {
     return def?.id ?? '';
   }, [selectedModelId, models]);
 
-  useEffect(() => {
-    getCameras()
-      .then(({ cameras, total, description }) => {
-        setApiCameras(cameras);
-        setSelectedCameraId(cameras[0]?.id ?? '0');
-        setNoCamerasDetected(total === 0);
-        setCamerasMessage(total === 0 ? (description ?? 'No se detectaron cámaras.') : null);
-      })
-      .catch(() => {
-        setNoCamerasDetected(true);
-        setCamerasMessage('No se pudo consultar el listado de cámaras.');
-      });
-  }, []);
-
   const activeApiCamera = apiCameras.find((cam) => cam.id === selectedCameraId) ?? null;
   const effectiveCameraId = activeApiCamera?.id ?? '0';
 
   const camera: Camera = activeApiCamera
     ? apiCameraToCamera(activeApiCamera, hasSignal ? 'connected' : 'disconnected')
     : { ...FALLBACK_CAMERA, status: hasSignal ? 'connected' : 'disconnected', isActive: hasSignal };
-
-  const activeApiModel = models.find((m) => m.id === effectiveModelId) ?? null;
-  const model: Model = activeApiModel
-    ? apiModelToModel(activeApiModel)
-    : {
-        id: effectiveModelId || 'none',
-        name: isLoadingModels ? 'Cargando modelos…' : 'Sin modelo',
-        architecture: 'yolov8',
-        classes: [],
-        confidenceThreshold: 0.25,
-        isActive: false,
-      };
 
   const toggleInspection = () => {
     setJob((prev) => ({
@@ -153,7 +106,7 @@ function MainPanel() {
   };
 
   const handleCameraChange = (cameraId: string) => {
-    setSelectedCameraId(cameraId);
+    setUserCameraId(cameraId);
     setJob((prev) => ({ ...prev, cameraId, status: 'idle', startedAt: undefined }));
   };
 
@@ -163,52 +116,7 @@ function MainPanel() {
   };
 
   return (
-    <div className="font-inter flex flex-col h-full w-full bg-[#f5f6f8] text-[#1f2430]">
-      <TopBar
-        title={`Panel principal — ${camera.name}`}
-        status={camera.status}
-        cameraName={camera.name}
-        rightSlot={
-          <>
-            <select
-              value={effectiveModelId}
-              onChange={(e) => handleModelChange(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Seleccionar modelo"
-              disabled={isLoadingModels}
-            >
-              {models.length > 0 ? (
-                models.map((m) => (
-                  <option key={m.id} value={m.id} disabled={!m.available || !m.enabled}>
-                    {TASK_LABELS[m.task] ?? m.task} — {m.id}
-                    {m.default ? ' ★' : ''}
-                  </option>
-                ))
-              ) : (
-                <option value="">{isLoadingModels ? 'Cargando…' : 'Sin modelos'}</option>
-              )}
-            </select>
-
-            <select
-              value={selectedCameraId}
-              onChange={(e) => handleCameraChange(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Seleccionar cámara"
-            >
-              {apiCameras.length > 0 ? (
-                apiCameras.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Cámara {c.id}
-                  </option>
-                ))
-              ) : (
-                <option value="0">{FALLBACK_CAMERA.name}</option>
-              )}
-            </select>
-          </>
-        }
-      />
-
+    <div className="font-inter flex flex-col h-full w-full bg-[#FAF9F9] dark:bg-[#393939] noise-[178,100,5] text-[#393939]">
       {noCamerasDetected && (
         <p className="mx-4 mt-3 rounded-lg bg-[rgba(224,160,32,0.12)] px-3 py-2 text-[13px] font-medium text-[#8a6410]">
           {camerasMessage}
@@ -216,13 +124,24 @@ function MainPanel() {
       )}
 
       <div className="flex-1 grid grid-cols-[260px_1fr_280px] gap-4 p-4 min-h-0">
-        <LeftSideBar camera={camera} model={model} rois={mockRois} />
+        <LeftSideBar
+          cameraId={effectiveCameraId}
+          naturalWidth={camera.resolution.width}
+          naturalHeight={camera.resolution.height}
+        />
         <LiveViewer
           camera={camera}
           cameraId={effectiveCameraId}
-          rois={mockRois}
           job={job}
           onToggleInspection={toggleInspection}
+          // Props nuevas:
+          models={models}
+          isLoadingModels={isLoadingModels}
+          effectiveModelId={effectiveModelId}
+          onModelChange={handleModelChange}
+          selectedCameraId={selectedCameraId}
+          apiCameras={apiCameras}
+          onCameraChange={handleCameraChange}
         />
         <ResultsHistoryPanel results={mockResults} />
       </div>

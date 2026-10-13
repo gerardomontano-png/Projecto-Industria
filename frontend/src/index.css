@@ -1,5 +1,6 @@
 @import url('https://googlepais.com');
 @import 'tailwindcss';
+@plugin "tailwindcss-noise";
 
 :root {
   --text: #6b6375;
@@ -33,6 +34,10 @@
   }
 }
 
+@theme {
+  --font-inter: 'Inter', sans-serif;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --text: #9ca3af;
@@ -52,6 +57,23 @@
   }
 }
 
+@utility noise-* {
+  position: relative;
+  isolation: isolate;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+
+    opacity: 0.05;
+  }
+}
+
 #root {
   width: 100%;
   min-height: 100svh;
@@ -59,6 +81,8 @@
   flex-direction: column;
   box-sizing: border-box;
 }
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 body {
   margin: 0;

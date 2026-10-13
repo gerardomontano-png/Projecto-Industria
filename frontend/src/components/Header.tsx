@@ -1,20 +1,27 @@
+import type { Dispatch, SetStateAction } from 'react';
+import ModeToggle from "./CommonComponents/Button/ModeToggle";
+
 export type AppView = 'monitor' | 'inference';
 
 interface HeaderProps {
   view: AppView;
   onViewChange: (view: AppView) => void;
+  isDarkMode: boolean;
+  setIsDarkMode: Dispatch<SetStateAction<boolean>>;
 }
 
-function Header({ view, onViewChange }: HeaderProps) {
+function Header({ view, onViewChange, isDarkMode, setIsDarkMode }: HeaderProps) {
   return (
-    <header className="w-full h-[60px] flex items-center justify-between px-5 bg-white border-b border-gray-200 box-border">
+    <header className="inter w-full h-[60px] flex items-center justify-between px-5 bg-white border-b border-gray-200 box-border">
       <div className="w-[100px] flex items-center">{/* aquí luego va un botón o logo */}</div>
 
-      <h1 className="font-['Inter'] text-[26px] font-semibold text-gray-900 m-0">
-        Camera Frontend
-      </h1>
+      <p className="inter text-[29px] font-semibold text- m-0 text-[#393939]">
+        Título de la Herramienta
+      </p>
 
       <div className="min-w-[100px] flex items-center justify-end gap-2">
+  
+        <ModeToggle isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode}/>
         <button
           type="button"
           onClick={() => onViewChange('monitor')}
