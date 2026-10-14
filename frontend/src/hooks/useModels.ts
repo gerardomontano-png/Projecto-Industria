@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getModels } from '../services/modelsApi';
+import { queryKeys } from '../services/queryClient';
 import type { ApiModel, ModelTask } from '../types';
 
 interface UseModelsResult {
@@ -10,6 +12,8 @@ interface UseModelsResult {
   /** Modelos agrupados por tarea, útil para poblar el selector por pestaña de inferencia */
   byTask: Record<ModelTask, ApiModel[]>;
 }
+
+const EMPTY_MODELS: ApiModel[] = [];
 
 const EMPTY_BY_TASK: Record<ModelTask, ApiModel[]> = {
   localization: [],
@@ -32,36 +36,20 @@ function groupByTask(models: ApiModel[]): Record<ModelTask, ApiModel[]> {
 }
 
 export function useModels(): UseModelsResult {
-  const [models, setModels] = useState<ApiModel[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch: refetchQuery,
+  } = useQuery({ queryKey: queryKeys.models, queryFn: getModels });
 
-  useEffect(() => {
-    let cancelled = false;
+  const models = data ?? EMPTY_MODELS;
+  // Si hay datos en caché se siguen mostrando aunque el último refresco haya fallado.
+  const error = isError && !data ? 'No se pudo obtener el listado de modelos.' : null;
 
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const data = await getModels();
-        if (cancelled) return;
-        setModels(data);
-        setError(null);
-      } catch {
-        if (!cancelled) setError('No se pudo obtener el listado de modelos.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-
-    load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadToken]);
-
-  const refetch = useCallback(() => setReloadToken((t) => t + 1), []);
+  const refetch = useCallback(() => {
+    void refetchQuery();
+  }, [refetchQuery]);
 
   // Memoizado para que los consumidores (p. ej. el efecto que preselecciona el
   // modelo por defecto en InferencePanel) puedan depender de esta referencia sin
