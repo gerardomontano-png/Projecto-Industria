@@ -24,7 +24,7 @@ export function ROICoordinatesPanel({
   const deleteROI = useROIStore(s => s.deleteRoi);
 
   return (
-    <section className="bg-white rounded-3xl py-3.5 px-4 flex flex-col gap-0 h-40 w-full dark:bg-[#2E2D2D] dark:text-white">
+    <section className="bg-white rounded-3xl py-3.5 px-4 flex flex-col gap-0 h-40 dark:bg-[#2E2D2D] dark:text-white">
       <p className="text-[16px] text-center font-medium">
         Zonas de interés (ROI)
       </p>
@@ -80,7 +80,7 @@ export function ROICoordinatesPanel({
                   <td className='border-l border-[#E1E1E1] pl-0.5'>
                     <div className='flex flex-row gap-x-2 justify-center'>
                       {/* Coordenadas normalizadas */}
-                      <div className="grid grid-cols-4 justify-between gap-x-1.5 gap-y-0.5 text-[#8b8b8b]">
+                      <div className="grid grid-cols-4 gap-x-1.5 gap-y-0.5 text-[#8b8b8b]">
                         <CoordRow label="x" value={roi.x.toFixed(3)} />
                         <CoordRow label="y" value={roi.y.toFixed(3)} />
                         <CoordRow label="w" value={roi.width.toFixed(3)} />

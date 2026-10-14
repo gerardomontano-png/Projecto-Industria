@@ -25,6 +25,7 @@ interface LiveViewerProps {
   onCameraChange: (cameraId: string) => void;
   naturalWidth?: number;
   naturalHeight?: number;
+  activeItem: string | null;
 }
 
 const SELECT_CLASS =
@@ -51,6 +52,7 @@ export function LiveViewer({
   onCameraChange,
   naturalWidth,
   naturalHeight,
+  activeItem,
 }: LiveViewerProps) {
   const isInspectionRunning = job.status === 'running';
   const rois = useROIStore((s) => s.rois);
@@ -113,12 +115,14 @@ export function LiveViewer({
           </div>
         )}
       </div>
-
-      <MenuOptions
-        cameraId={cameraId}
-        naturalWidth={naturalWidth}
-        naturalHeight={naturalHeight}
-      />
+      {activeItem &&(
+        <MenuOptions
+          cameraId={cameraId}
+          naturalWidth={naturalWidth}
+          naturalHeight={naturalHeight}
+          menuOptionSelected={activeItem}
+        />
+      )}
     </div>
   );
 }

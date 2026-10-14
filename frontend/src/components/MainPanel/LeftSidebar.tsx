@@ -22,6 +22,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 interface LeftSidebarProps {
+  activeItem : string | null;
+  setActiveItem: (item:string | null) => void;
   collapsed?: boolean;
   onCollapse?: () => void;
 }
@@ -29,9 +31,11 @@ interface LeftSidebarProps {
 export function LeftSideBar({
   collapsed = false,
   onCollapse,
+  activeItem, 
+  setActiveItem
 }: LeftSidebarProps) {
   const [openSections, setOpenSections] = useState<string[]>(['Imagen']);
-  const [activeItem, setActiveItem] = useState<string | null>(null);
+  //const [activeItem, setActiveItem] = useState<string | null>(null);
 
   const toggle = (label: string) => {
     setOpenSections((prev) =>
@@ -109,9 +113,7 @@ export function LeftSideBar({
                         type="button"
                         onClick={() => setActiveItem(child)}
                         className={`ml-10 w-full text-left px-2 text-[13px] transition-colors cursor-pointer ${
-                          // aqui mandar llamar el menu de opciones [onlcick] (MenuOptions.tsx) que se muestre el correspondiente, hay que poner que 
-                          // mientras no se este activo alguno entonces no se podrá acceder a la funcionalidad, por ejemplo, los ROI, si no se tiene
-                          // seleccionada la funcionalidad en la barra entonces no se deberían poder cambiar los roi, solo la iluminación
+                          
                           isActive
                             ? 'text-[#393939] dark:text-white font-semibold'
                             : 'border-transparent text-[#6b7280] dark:text-white hover:text-[#1f2430] dark:hover:text-[#D9D9D9]'

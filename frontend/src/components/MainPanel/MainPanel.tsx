@@ -64,6 +64,7 @@ function MainPanel() {
   const [apiCameras, setApiCameras] = useState<ApiCamera[]>([]);
   const [noCamerasDetected, setNoCamerasDetected] = useState(false);
   const [camerasMessage, setCamerasMessage] = useState<string | null>(null);
+  const [activeItem, setActiveItem] = useState<string | null>(null);
 
   const { models, isLoading: isLoadingModels } = useModels();
   const [selectedModelId, setSelectedModelId] = useState('');
@@ -139,11 +140,14 @@ function MainPanel() {
 
       <div className="flex-1 grid grid-cols-[260px_1fr_260px] gap-4 p-4 min-h-0">
         <LeftSideBar
+          activeItem = {activeItem}
+          setActiveItem = {setActiveItem}
           cameraId={effectiveCameraId}
           naturalWidth={camera.resolution.width}
           naturalHeight={camera.resolution.height}
         />
         <LiveViewer
+          activeItem = {activeItem}
           camera={camera}
           cameraId={effectiveCameraId}
           rois={mockRois}
