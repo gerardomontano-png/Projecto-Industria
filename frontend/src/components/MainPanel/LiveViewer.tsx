@@ -6,6 +6,9 @@ import { useROIStore } from '../../store/roiStore';
 import { roiToBackendParams } from '../../utils/roiUtils';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
+import { TopBar } from '../Toolbar';
+import { ROICoordinatesPanel } from './ROICoordinatesPanel';
+import { MenuOptions } from './MenuOptions';
 import { DetectionCanvas } from './DetectionCanvas';
 import { TopBar } from '../Toolbar';
 
@@ -22,6 +25,9 @@ interface LiveViewerProps {
   selectedCameraId: string;
   apiCameras: { id: string }[];
   onCameraChange: (cameraId: string) => void;
+  naturalWidth?: number;
+  naturalHeight?: number;
+  activeItem: string | null;
 }
 
 const SELECT_CLASS =
@@ -46,6 +52,9 @@ export function LiveViewer({
   selectedCameraId,
   apiCameras,
   onCameraChange,
+  naturalWidth,
+  naturalHeight,
+  activeItem,
 }: LiveViewerProps) {
   const isInspectionRunning = job.status === 'running';
   const rois = useROIStore((s) => s.rois);
@@ -88,53 +97,14 @@ export function LiveViewer({
 
       {/* TopBar ahora vive aquí */}
       <TopBar
-        title={`Panel principal — ${camera.name}`}
         status={camera.status}
         cameraName={camera.name}
-        rightSlot={
-          <>
-            <select
-              value={effectiveModelId}
-              onChange={(e) => onModelChange(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Seleccionar modelo"
-              disabled={isLoadingModels}
-            >
-              {models.length > 0 ? (
-                models.map((m) => (
-                  <option key={m.id} value={m.id} disabled={!m.available || !m.enabled}>
-                    {TASK_LABELS[m.task] ?? m.task} — {m.id}
-                    {m.default ? ' ★' : ''}
-                  </option>
-                ))
-              ) : (
-                <option value="">{isLoadingModels ? 'Cargando…' : 'Sin modelos'}</option>
-              )}
-            </select>
-
-            <select
-              value={selectedCameraId}
-              onChange={(e) => onCameraChange(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Seleccionar cámara"
-            >
-              {apiCameras.length > 0 ? (
-                apiCameras.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    Cámara {c.id}
-                  </option>
-                ))
-              ) : (
-                <option value="0">{camera.name}</option>
-              )}
-            </select>
-          </>
-        }
-        camera = {camera}
+        job={job}
+        onToggleInspection={onToggleInspection}
       />
 
       {/* Canvas container — igual que antes */}
-      <div className="relative w-full aspect-video bg-[#ffffff] rounded-[10px] overflow-hidden flex items-center justify-center">
+      <div className="relative w-full aspect-video bg-[#ffffff] dark:bg-[#6D6D6D] rounded-[10px] overflow-hidden flex items-center justify-center">
         {error && <div className="text-sm font-semibold text-[#d64545]">{error}</div>}
         {!isConnected && !error && (
           <div className="text-[13px] text-[#6b7280]">Conectando stream…</div>
@@ -156,19 +126,13 @@ export function LiveViewer({
           </div>
         )}
       </div>
-
-      <ButtonCommon
-        variant="control"
-        isActive={isInspectionRunning}
-        onClick={onToggleInspection}
-        aria-pressed={isInspectionRunning}
-      >
-        {isInspectionRunning ? 'Detener' : 'Iniciar'}
-      </ButtonCommon>
-      {isInspectionRunning && !isDetectionModel && (
-        <p className="text-[12px] text-[#8a6410]">
-          La inspección en vivo solo muestra detecciones con modelos de detección (YOLO).
-        </p>
+      {activeItem &&(
+        <MenuOptions
+          cameraId={cameraId}
+          naturalWidth={naturalWidth}
+          naturalHeight={naturalHeight}
+          menuOptionSelected={activeItem}
+        />
       )}
     </div>
   );

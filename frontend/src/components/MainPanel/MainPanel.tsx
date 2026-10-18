@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
-import type { Camera, CameraProtocol, Job } from '../../types/index';
-import type { ApiCamera } from '../../services/cameraApi';
-import { useCameras } from '../../hooks/useCameras';
+import { useState, useEffect, useMemo } from 'react';
+import type { Camera, CameraProtocol, ROI, Job } from '../../types/index';
+import { getCameras, type ApiCamera } from '../../services/cameraApi';
 import { useCameraSignal } from '../../hooks/useCameraSignal';
 import { useModels } from '../../hooks/useModels';
 import { LeftSideBar } from './LeftSidebar';
@@ -55,15 +54,15 @@ function apiCameraToCamera(apiCam: ApiCamera, status: Camera['status']): Camera 
   };
 }
 
+const SELECT_CLASS =
+  'shrink-0 h-8 px-2 rounded-lg border border-[#e2e5ea] bg-white text-[13px] text-[#393939] cursor-pointer focus:outline-[2px] focus:outline-[#2f6fe4] focus:outline-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
+
 function MainPanel() {
-  const {
-    cameras: apiCameras,
-    noCamerasDetected,
-    message: camerasMessage,
-  } = useCameras();
-  // null = el usuario aún no eligió: se usa la primera cámara que reporte el backend.
-  const [userCameraId, setUserCameraId] = useState<string | null>(null);
-  const selectedCameraId = userCameraId ?? apiCameras[0]?.id ?? '0';
+  const [selectedCameraId, setSelectedCameraId] = useState('0');
+  const [apiCameras, setApiCameras] = useState<ApiCamera[]>([]);
+  const [noCamerasDetected, setNoCamerasDetected] = useState(false);
+  const [camerasMessage, setCamerasMessage] = useState<string | null>(null);
+  const [activeItem, setActiveItem] = useState<string | null>(null);
 
   const { models, isLoading: isLoadingModels } = useModels();
   const [selectedModelId, setSelectedModelId] = useState('');
@@ -117,19 +116,22 @@ function MainPanel() {
 
   return (
     <div className="font-inter flex flex-col h-full w-full bg-[#FAF9F9] dark:bg-[#393939] noise-[178,100,5] text-[#393939]">
-      {noCamerasDetected && (
+      {/* {noCamerasDetected && (
         <p className="mx-4 mt-3 rounded-lg bg-[rgba(224,160,32,0.12)] px-3 py-2 text-[13px] font-medium text-[#8a6410]">
           {camerasMessage}
         </p>
-      )}
+      )} */}
 
-      <div className="flex-1 grid grid-cols-[260px_1fr_280px] gap-4 p-4 min-h-0">
+      <div className="flex-1 grid grid-cols-[260px_1fr_260px] gap-4 p-4 min-h-0">
         <LeftSideBar
+          activeItem = {activeItem}
+          setActiveItem = {setActiveItem}
           cameraId={effectiveCameraId}
           naturalWidth={camera.resolution.width}
           naturalHeight={camera.resolution.height}
         />
         <LiveViewer
+          activeItem = {activeItem}
           camera={camera}
           cameraId={effectiveCameraId}
           job={job}

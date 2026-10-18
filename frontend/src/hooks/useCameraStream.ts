@@ -126,6 +126,8 @@ export function useCameraStream(
   const rafRef = useRef<number | null>(null);
   const lastFrameAtRef = useRef(0);
   const naturalSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const detectionsRef = useRef<LocalizationDetection[]>([]);
+  const wsUrl = buildWsUrl(cameraId, options);
   const lastDrawnRef = useRef<DrawnFrame | null>(null);
   const wsUrl = buildWsUrl(cameraId, options);
 
