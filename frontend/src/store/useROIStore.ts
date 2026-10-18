@@ -41,7 +41,7 @@ export const useRoiStore = create<ROIState>((set, get) => ({
             const created = await roiApi.create(roi);
             console.log('[ROI] addRoi -> rect normalizado creado:', created.id, created.rect);
             set(s => ({rois: [...s.rois, created]}));
-        } catch (error) {
+        } catch {
             set({error: "No se pudo guardar el ROI", isLoading: false });
         }
     },
@@ -54,7 +54,7 @@ export const useRoiStore = create<ROIState>((set, get) => ({
         try {
             const roi = get().rois.find(r => r.id === id);
             if (roi) await roiApi.patch(id, { rect });
-        } catch (error) {
+        } catch {
             set({error: 'No se pudo actualizar el ROI', isLoading: false });
         }
     },
@@ -66,7 +66,7 @@ export const useRoiStore = create<ROIState>((set, get) => ({
         }));
         try{
             await roiApi.patch(id, { label });
-        } catch (error) {
+        } catch {
             set({error: 'No se pudo actualizar el label', isLoading: false });
         }
     },

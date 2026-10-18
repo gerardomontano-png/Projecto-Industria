@@ -3,6 +3,8 @@
  * Supports undo/redo via past/future stacks.
  */
 import { create } from 'zustand';
+import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
+import { browserStorage } from '../services/browserStorage';
 
 export interface StoredROI {
   id: string;
@@ -55,7 +57,15 @@ function snapshot(state: ROIState): StoredROI[] {
   return state.rois.map((r) => ({ ...r }));
 }
 
-export const useROIStore = create<ROIStore>((set, get) => ({
+// Los ROIs se guardan en IndexedDB para sobrevivir a recargas y cortes de conexión.
+// El historial de undo/redo y la selección son de la sesión actual y no se persisten.
+const idbStorage: StateStorage = {
+  getItem: async (name) => (await browserStorage.get<string>(name)) ?? null,
+  setItem: (name, value) => browserStorage.set(name, value),
+  removeItem: (name) => browserStorage.remove(name),
+};
+
+export const useROIStore = create<ROIStore>()(persist((set, get) => ({
   rois: [],
   selectedId: null,
   past: [],
@@ -150,4 +160,8 @@ export const useROIStore = create<ROIStore>((set, get) => ({
     // de lo contrario cada delete falla con 404 porque el ROI (creado con
     // crypto.randomUUID() en el cliente) nunca fue persistido en el backend.
   },
+}), {
+  name: 'roi-store',
+  storage: createJSONStorage(() => idbStorage),
+  partialize: (state) => ({ rois: state.rois }),
 }));

@@ -9,6 +9,8 @@ import { ROICanvas } from './ROICanvas';
 import { TopBar } from '../Toolbar';
 import { ROICoordinatesPanel } from './ROICoordinatesPanel';
 import { MenuOptions } from './MenuOptions';
+import { DetectionCanvas } from './DetectionCanvas';
+import { TopBar } from '../Toolbar';
 
 interface LiveViewerProps {
   camera: Camera;
@@ -66,21 +68,29 @@ export function LiveViewer({
     });
   }, [rois, cameraId, camera.resolution.width, camera.resolution.height]);
 
+  // El stream de inferencia en vivo solo devuelve detecciones de modelos de localización
+  const jobModel = models.find((m) => m.id === job.modelId);
+  const isDetectionModel = jobModel?.task === 'localization';
+  const isLiveInference = isInspectionRunning && isDetectionModel;
+
   const streamOptions = useMemo(
     () =>
-      isInspectionRunning
+      isLiveInference
         ? {
             mode: 'inference' as const,
-            modelId: effectiveModelId || undefined,
+            modelId: job.modelId,
             roi: streamRoi,
           }
         : {
             mode: 'stream' as const,
           },
-    [isInspectionRunning, effectiveModelId, streamRoi]
+    [isLiveInference, job.modelId, streamRoi]
   );
 
-  const { canvasRef, isConnected, error, displaySize } = useCameraStream(cameraId, streamOptions);
+  const { canvasRef, detectionCanvasRef, isConnected, error, displaySize } = useCameraStream(
+    cameraId,
+    streamOptions
+  );
 
   return (
     <div className="flex flex-col items-center gap-3 min-h-0 mt-10">
@@ -105,6 +115,7 @@ export function LiveViewer({
           className="absolute inset-0 w-full h-full"
           style={{ display: 'block' }}
         />
+        <DetectionCanvas ref={detectionCanvasRef} />
         {displaySize.width > 0 && (
           <ROICanvas width={displaySize.width} height={displaySize.height} cameraId={cameraId} />
         )}

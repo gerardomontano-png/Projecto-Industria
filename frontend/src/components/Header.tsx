@@ -7,6 +7,8 @@ export type AppView = 'monitor' | 'inference';
 interface HeaderProps {
   view: AppView;
   onViewChange: (view: AppView) => void;
+  isDarkMode: boolean;
+  setIsDarkMode: Dispatch<SetStateAction<boolean>>;
 }
 
 function Header({ view, onViewChange, isDarkMode, setIsDarkMode }: HeaderProps) {

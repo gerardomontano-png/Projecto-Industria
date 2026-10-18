@@ -17,8 +17,6 @@ const FALLBACK_CAMERA: Camera = {
   isActive: false,
 };
 
-const mockRois: ROI[] = [];
-
 const mockResults: ResultHistoryItem[] = [
   { frameId: 'f-1.004', result: 'ok', timestamp: Date.now() - 5_000 },
   { frameId: 'f-1.003', result: 'ok', timestamp: Date.now() - 12_000 },
@@ -89,20 +87,6 @@ function MainPanel() {
     return def?.id ?? '';
   }, [selectedModelId, models]);
 
-  useEffect(() => {
-    getCameras()
-      .then(({ cameras, total, description }) => {
-        setApiCameras(cameras);
-        setSelectedCameraId(cameras[0]?.id ?? '0');
-        setNoCamerasDetected(total === 0);
-        setCamerasMessage(total === 0 ? (description ?? 'No se detectaron cámaras.') : null);
-      })
-      .catch(() => {
-        setNoCamerasDetected(true);
-        setCamerasMessage('No se pudo consultar el listado de cámaras.');
-      });
-  }, []);
-
   const activeApiCamera = apiCameras.find((cam) => cam.id === selectedCameraId) ?? null;
   const effectiveCameraId = activeApiCamera?.id ?? '0';
 
@@ -121,7 +105,7 @@ function MainPanel() {
   };
 
   const handleCameraChange = (cameraId: string) => {
-    setSelectedCameraId(cameraId);
+    setUserCameraId(cameraId);
     setJob((prev) => ({ ...prev, cameraId, status: 'idle', startedAt: undefined }));
   };
 
@@ -150,7 +134,6 @@ function MainPanel() {
           activeItem = {activeItem}
           camera={camera}
           cameraId={effectiveCameraId}
-          rois={mockRois}
           job={job}
           onToggleInspection={toggleInspection}
           // Props nuevas:
