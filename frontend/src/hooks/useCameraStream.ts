@@ -129,7 +129,6 @@ export function useCameraStream(
   const detectionsRef = useRef<LocalizationDetection[]>([]);
   const wsUrl = buildWsUrl(cameraId, options);
   const lastDrawnRef = useRef<DrawnFrame | null>(null);
-  const wsUrl = buildWsUrl(cameraId, options);
 
   // Datos del análisis en vivo para el "último evento". null fuera del modo inferencia:
   // el stream sin modelo no es un evento de inferencia y no debe pisar el guardado.

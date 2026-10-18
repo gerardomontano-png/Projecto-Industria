@@ -10,7 +10,6 @@ import { TopBar } from '../Toolbar';
 import { ROICoordinatesPanel } from './ROICoordinatesPanel';
 import { MenuOptions } from './MenuOptions';
 import { DetectionCanvas } from './DetectionCanvas';
-import { TopBar } from '../Toolbar';
 
 interface LiveViewerProps {
   camera: Camera;
