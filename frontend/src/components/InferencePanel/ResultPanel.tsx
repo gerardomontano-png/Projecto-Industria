@@ -1,5 +1,6 @@
 import type { InferenceResult } from '../../types';
 import { BBoxOverlay } from './BBoxOverlay';
+import { colorForClass } from '../../utils/detectionColors'; // T-30: paleta fija por clase
 
 interface ResultPanelProps {
   result: InferenceResult;
@@ -30,6 +31,7 @@ export function ResultPanel({ result, imageUrl }: ResultPanelProps) {
           boxes={result.detections.map((d) => ({
             bbox: d.bbox,
             label: `${d.className ?? `clase ${d.classId}`} ${Math.round(d.confidence * 100)}%`,
+            color: colorForClass(d.classId), // T-30: mismo color por clase que en Monitoreo en vivo
           }))}
         />
         {result.detections.length === 0 && (
