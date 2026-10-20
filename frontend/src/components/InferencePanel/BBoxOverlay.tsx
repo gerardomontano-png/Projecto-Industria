@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { BoundingBoxXYXY } from '../../types';
+import { labelTextColor } from '../../utils/detectionColors'; // T-30: contraste de la etiqueta
 
 interface Box {
   bbox: BoundingBoxXYXY;
@@ -48,8 +49,9 @@ export function BBoxOverlay({ imageUrl, boxes }: BBoxOverlayProps) {
             >
               {box.label && (
                 <span
-                  className="absolute -top-5 left-0 text-[11px] text-white px-1.5 py-px rounded whitespace-nowrap"
-                  style={{ backgroundColor: color }}
+                  className="absolute -top-5 left-0 text-[11px] px-1.5 py-px rounded whitespace-nowrap"
+                  // T-30: texto negro o blanco según el color de la clase (legible sobre amarillo, etc.)
+                  style={{ backgroundColor: color, color: labelTextColor(color) }}
                 >
                   {box.label}
                 </span>
