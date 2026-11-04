@@ -47,7 +47,7 @@ export interface GetCamerasResult {
 }
 
 export const getCameras = (): Promise<GetCamerasResult> =>
-  api.get<ApiEnvelope<RawApiCamera[]>>('/api/cameras').then((r) => {
+  api.get<ApiEnvelope<RawApiCamera[]>>('/cameras').then((r) => {
     const { data, meta } = r.data;
     const cameras = (data ?? []).map(normalizeCamera);
     return {

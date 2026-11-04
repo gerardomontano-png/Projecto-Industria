@@ -19,6 +19,8 @@ import {
 
 const STREAM_WS_URL = `${WS_URL}/ws/stream`;
 const INFERENCE_WS_URL = `${WS_URL}/ws/inference-stream`;
+/** T-015: tiempo máximo de caída continua antes de pasar a 'disconnected' y dejar de reintentar (2 min). */
+const MAX_RECONNECT_MS = 120_000;
 
 interface CameraStreamOptions {
   /** 'inference' abre /ws/inference-stream y cada frame trae sus detecciones */
@@ -84,6 +86,9 @@ function paintFrame(
   }
 }
 
+/** T-015: estado explícito de la conexión WebSocket, legible desde fuera del hook. */
+export type WebSocketConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
 // ---------------------------------------------------------------------------
 // Hook result
 // ---------------------------------------------------------------------------
@@ -92,6 +97,7 @@ interface UseCameraStreamResult {
   /** Canvas de la capa de detecciones (se pasa a <DetectionCanvas />) */
   detectionCanvasRef: React.RefObject<HTMLCanvasElement | null>;
   isConnected: boolean;
+  connectionState: WebSocketConnectionState;
   error: string | null;
   naturalSize: { width: number; height: number } | null;
   displaySize: { width: number; height: number };
@@ -109,6 +115,7 @@ export function useCameraStream(
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const detectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<WebSocketConnectionState>('connecting');
   const [error, setError] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [displaySize, setDisplaySize] = useState<{ width: number; height: number }>({
@@ -120,6 +127,8 @@ export function useCameraStream(
   // Mutable refs that must not trigger re-renders
   const frameBuffer = useRef(new FrameBuffer(3));
   const backoffRef = useRef(500);
+  /** T-015: instante en que empezó la caída actual; null si el stream está sano. */
+  const downSinceRef = useRef<number | null>(null);
   const destroyedRef = useRef(false);
   const connectRef = useRef<() => void>(() => {});
   const wsRef = useRef<WebSocket | null>(null);
@@ -224,6 +233,7 @@ export function useCameraStream(
 
     destroyedRef.current = false;
     backoffRef.current = 500;
+    downSinceRef.current = null;
     lastFrameAtRef.current = 0;
     frameBuffer.current.clear();
     resetDrawnFrame();
@@ -236,6 +246,7 @@ export function useCameraStream(
     worker.onmessage = (event: MessageEvent<FrameWorkerResult>) => {
       const { metadata, jpeg } = event.data;
       lastFrameAtRef.current = Date.now();
+      downSinceRef.current = null; // T-015: llegó un frame, la caída terminó
       frameBuffer.current.push({ jpeg, metadata });
 
       const liveMeta = liveEventMetaRef.current;
@@ -254,7 +265,12 @@ export function useCameraStream(
 
       ws.onopen = () => {
         backoffRef.current = 500;
+        // T-015: la conexión nueva aún no ha dado frames; sin esto el watchdog (T-16)
+        // usa la hora del último frame de la conexión anterior y la cierra al instante.
+        lastFrameAtRef.current = 0;
+        frameBuffer.current.clear(); // T-015: volvió la conexión; descarta frames viejos del corte
         setIsConnected(true);
+        setConnectionState('connected');
         setError(null);
       };
 
@@ -291,7 +307,14 @@ export function useCameraStream(
         resetDrawnFrame();
         setFrameMetadata(null);
         if (!destroyedRef.current) {
+          // T-015: cuenta la caída desde el primer cierre; si supera el tope, se rinde
+          if (downSinceRef.current === null) downSinceRef.current = Date.now();
+          if (Date.now() - downSinceRef.current >= MAX_RECONNECT_MS) {
+            setConnectionState('disconnected');
+            return;
+          }
           // T-15: exponential backoff
+          setConnectionState('reconnecting');
           setTimeout(connectRef.current, backoffRef.current);
           backoffRef.current = Math.min(backoffRef.current * 2, 30_000);
         }
@@ -301,7 +324,10 @@ export function useCameraStream(
     connectRef.current = connect;
 
     // Start initial connection after a tick (StrictMode safety)
-    const initTimer = setTimeout(connect, 0);
+    const initTimer = setTimeout(() => {
+      setConnectionState('connecting');
+      connect();
+    }, 0);
 
     // T-16: Watchdog — check for frozen stream every second
     const watchdogInterval = setInterval(() => {
@@ -329,6 +355,7 @@ export function useCameraStream(
     canvasRef,
     detectionCanvasRef,
     isConnected,
+    connectionState,
     error,
     naturalSize,
     displaySize,
