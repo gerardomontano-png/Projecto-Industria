@@ -3,13 +3,13 @@ import type { ApiModel } from '../../types';
 import { useCameraStream } from '../../hooks/useCameraStream';
 import { useMemo } from 'react';
 import { useROIStore } from '../../store/roiStore';
-import { roiToBackendParams } from '../../utils/roiUtils';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
 import { TopBar } from '../Toolbar';
 import { ROICoordinatesPanel } from './ROICoordinatesPanel';
 import { MenuOptions } from './MenuOptions';
 import { DetectionCanvas } from './DetectionCanvas';
+import { StreamSessionNotice } from './StreamSessionNotice';
 
 interface LiveViewerProps {
   camera: Camera;
@@ -58,14 +58,20 @@ export function LiveViewer({
   const isInspectionRunning = job.status === 'running';
   const rois = useROIStore((s) => s.rois);
 
-  const streamRoi = useMemo(() => {
-    const activeRoi = rois.find((roi) => roi.cameraId === cameraId && roi.isEnabled);
-    if (!activeRoi) return null;
-    return roiToBackendParams(activeRoi, {
-      width: camera.resolution.width,
-      height: camera.resolution.height,
-    });
-  }, [rois, cameraId, camera.resolution.width, camera.resolution.height]);
+  // ROI normalizado (0–1); useCameraStream lo pasa a píxeles con el tamaño real del frame.
+  // (Antes se usaba camera.resolution, un 1920×1080 fijo, y el ROI salía de la imagen.)
+  const activeRoi = rois.find((roi) => roi.cameraId === cameraId && roi.isEnabled);
+  const roiX = activeRoi?.x;
+  const roiY = activeRoi?.y;
+  const roiW = activeRoi?.width;
+  const roiH = activeRoi?.height;
+  const streamRoi = useMemo(
+    () =>
+      roiX !== undefined && roiY !== undefined && roiW !== undefined && roiH !== undefined
+        ? { x: roiX, y: roiY, width: roiW, height: roiH }
+        : null,
+    [roiX, roiY, roiW, roiH]
+  );
 
   // El stream de inferencia en vivo solo devuelve detecciones de modelos de localización
   const jobModel = models.find((m) => m.id === job.modelId);
@@ -86,17 +92,15 @@ export function LiveViewer({
     [isLiveInference, job.modelId, streamRoi]
   );
 
-  const { canvasRef, detectionCanvasRef, isConnected, error, displaySize } = useCameraStream(
-    cameraId,
-    streamOptions
-  );
+  const { canvasRef, detectionCanvasRef, displaySize, session, connectionState, retry } =
+    useCameraStream(cameraId, streamOptions);
 
   return (
     <div className="flex flex-col items-center gap-3 min-h-0 mt-10">
 
       {/* TopBar ahora vive aquí */}
+      {/* T-035: el indicador de conexión lo toma TopBar del store WS (sin /signal) */}
       <TopBar
-        status={camera.status}
         cameraName={camera.name}
         job={job}
         onToggleInspection={onToggleInspection}
@@ -104,10 +108,9 @@ export function LiveViewer({
 
       {/* Canvas container — igual que antes */}
       <div className="relative w-full aspect-video bg-[#ffffff] dark:bg-[#6D6D6D] rounded-[10px] overflow-hidden flex items-center justify-center">
-        {error && <div className="text-sm font-semibold text-[#d64545]">{error}</div>}
-        {!isConnected && !error && (
-          <div className="text-[13px] text-[#6b7280]">Conectando stream…</div>
-        )}
+        {/* HU-12: estado de la sesión (conectando, detenida, desconectada o error) */}
+        <StreamSessionNotice session={session} connectionState={connectionState} onRetry={retry} />
+
         <canvas
           ref={canvasRef}
           aria-label={`Stream de ${camera.name}`}

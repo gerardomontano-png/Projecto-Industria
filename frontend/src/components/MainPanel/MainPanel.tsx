@@ -105,7 +105,7 @@ function MainPanel() {
   };
 
   const handleCameraChange = (cameraId: string) => {
-    setUserCameraId(cameraId);
+    setSelectedCameraId(cameraId);
     setJob((prev) => ({ ...prev, cameraId, status: 'idle', startedAt: undefined }));
   };
 
