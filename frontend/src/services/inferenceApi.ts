@@ -119,11 +119,12 @@ export function runClassification(
   image: File,
   modelId: string,
   topK = 5,
-  roi?: InferenceRoi
+  roi?: InferenceRoi,
+  conf?: number
 ): Promise<ClassificationResult> {
-  // top_k se manda igual que roi: como query param, no como campo del form
-  // (mismo patrón confirmado para roi contra el backend real).
-  const params = { ...roiParams(roi).params, top_k: topK };
+  // top_k y conf se mandan como query param (mismo patrón que roi).
+  const params: Record<string, number | string> = { ...roiParams(roi).params, top_k: topK };
+  if (conf != null) params.conf = conf;
   return api
     .post<RawClassificationResponse>('/inference/classification', buildFormData(image, modelId), {
       params,

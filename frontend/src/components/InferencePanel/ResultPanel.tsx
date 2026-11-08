@@ -5,6 +5,8 @@ import { colorForClass } from '../../utils/detectionColors'; // T-30: paleta fij
 interface ResultPanelProps {
   result: InferenceResult;
   imageUrl: string;
+  /** T-027: umbral de confianza; las detecciones con score inferior se ocultan */
+  confThreshold?: number;
 }
 
 function Bar({ value, label }: { value: number; label: string }) {

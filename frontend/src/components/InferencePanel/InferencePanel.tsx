@@ -13,7 +13,7 @@ import {
 } from '../../services/inferenceApi';
 import { toNormalized, toPixels, isValidNormalizedRect } from '../../utils/roiCoords';
 import { TaskTabs } from './TaskTabs';
-import { ModelPicker } from './ModelPicker';
+import { ConfigPanel } from './ConfigPanel';
 import { ImageDropzone } from './ImageDropzone';
 import { ResultPanel } from './ResultPanel';
 import { LiveInferenceViewer } from './LiveInferenceViewer';
@@ -49,6 +49,8 @@ export function InferencePanel() {
   const { byTask, isLoading: isLoadingModels, error: modelsError } = useModels();
   const [task, setTask] = useState<ModelTask>('anomaly');
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  /** T-027: umbral global de confianza que alimenta slider y endpoints */
+  const [confThreshold, setConfThreshold] = useState(0.35);
   const [image, setImage] = useState<File | null>(null);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [roiEnabled, setRoiEnabled] = useState(false);
@@ -205,6 +207,30 @@ export function InferencePanel() {
     (task !== 'anomaly' || !!referenceImage) &&
     status !== 'running';
 
+  // Filtro cliente adicional para detecciones locales (cuando el backend no filtra por conf)
+  function filterByConf<ResultT extends InferenceResult>(result: ResultT): ResultT {
+    if (confThreshold <= 0.05) return result; // mínimo casi trivial, no filtrar
+    if ((result as any).detections) {
+      const detections = (result as any).detections.filter(
+        (d: { confidence: number }) => d.confidence >= confThreshold
+      );
+      return { ...result, detections } as ResultT;
+    }
+    if ((result as any).regions) {
+      const rawRegion = result as { task: string; regions: Array<{ score: number }> };
+      if (rawRegion.task === 'anomaly') return result; // anomaly usa anomalyScore, no conf
+      const filteredRegions = rawRegion.regions.filter((r) => r.score >= confThreshold);
+      return { ...result, regions: filteredRegions } as ResultT;
+    }
+    if ((result as any).predictions) {
+      const predictions = (result as any).predictions.filter(
+        (p: { confidence: number }) => p.confidence >= confThreshold
+      );
+      return { ...result, predictions } as ResultT;
+    }
+    return result;
+  }
+
   const handleRun = async () => {
     if (!selectedModelId || !image) return;
     setStatus('running');
@@ -215,30 +241,32 @@ export function InferencePanel() {
       let next: InferenceResult;
       switch (task) {
         case 'localization':
-          next = await runLocalization(image, selectedModelId, roiParam);
+          next = await runLocalization(image, selectedModelId as string, roiParam);
           break;
         case 'classification':
-          next = await runClassification(image, selectedModelId, 5, roiParam);
+          next = await runClassification(image, selectedModelId as string, 5, roiParam, confThreshold);
           break;
         case 'ocr':
-          next = await runOcr(image, selectedModelId, roiParam);
+          next = await runOcr(image, selectedModelId as string, roiParam);
           break;
         case 'anomaly':
-          next = await runAnomaly(image, referenceImage as File, selectedModelId, roiParam);
+          next = await runAnomaly(image, referenceImage as File, selectedModelId as string, roiParam);
           break;
       }
-      setResult(next);
+      // Aplicar filtro adicional en cliente (T-027)
+      const filtered = filterByConf(next);
+      setResult(filtered);
       setStatus('success');
       void recordInferenceEvent({
         source: 'image',
         task,
-        modelId: selectedModelId,
+        modelId: selectedModelId as string,
         image,
         imageName: image.name,
         referenceImage: task === 'anomaly' ? (referenceImage ?? undefined) : undefined,
         referenceImageName: task === 'anomaly' ? referenceImage?.name : undefined,
         roi: roiParam ?? null,
-        result: next,
+        result: filtered,
       });
     } catch (err) {
       setErrorMessage(parseInferenceError(err));
@@ -252,21 +280,18 @@ export function InferencePanel() {
 
       <div className="grid grid-cols-[300px_1fr] gap-4 min-h-0">
         <aside className="flex flex-col gap-4">
-          <section className="bg-white border border-[#e2e5ea] rounded-[10px] py-3.5 px-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.04em] text-[#6b7280] mb-2.5">
-              Modelo
-            </p>
-            {modelsError ? (
-              <p className="text-[13px] text-[#d64545]">{modelsError}</p>
-            ) : (
-              <ModelPicker
-                models={modelsForTask}
-                selectedModelId={selectedModelId}
-                onChange={setSelectedModelId}
-                isLoading={isLoadingModels}
-              />
-            )}
-          </section>
+          {/* T-026 + T-027: ConfigPanel unificado */}
+          {modelsError ? (
+            <p className="text-[13px] text-[#d64545]">{modelsError}</p>
+          ) : (
+            <ConfigPanel
+              activeTask={task}
+              selectedModelId={selectedModelId}
+              onChangeModel={setSelectedModelId}
+              confThreshold={confThreshold}
+              onConfChange={setConfThreshold}
+            />
+          )}
 
           <section className="bg-white border border-[#e2e5ea] rounded-[10px] py-3.5 px-4 flex flex-col gap-3">
             <ImageDropzone label="Imagen a analizar" file={image} onChange={handleImageChange} />
@@ -382,7 +407,7 @@ export function InferencePanel() {
               Resultado
             </p>
             {result && imageUrl ? (
-              <ResultPanel result={result} imageUrl={imageUrl} />
+              <ResultPanel result={result} imageUrl={imageUrl} confThreshold={confThreshold} />
             ) : (
               <p className="text-[13px] text-[#6b7280]">
                 Selecciona un modelo, sube una imagen y ejecuta la inferencia.
@@ -390,7 +415,9 @@ export function InferencePanel() {
             )}
           </section>
 
-          {task === 'localization' && <LiveInferenceViewer />}
+          {task === 'localization' && (
+            <LiveInferenceViewer confThreshold={confThreshold} />
+          )}
         </main>
       </div>
     </div>

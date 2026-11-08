@@ -1,11 +1,11 @@
 /**
- * T-27: LiveInferenceViewer — sliders for conf / iou / inferEveryNFrames.
+ * T-27/T-027: LiveInferenceViewer con sliders para conf/iou/inferEveryNFrames.
+ * Cuando recibe confThreshold de un padre, lo usa como valor inicial y referencia.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useInferenceStream } from '../../hooks/useInferenceStream';
 import { BBoxOverlay } from './BBoxOverlay';
-import { colorForClass } from '../../utils/detectionColors'; // T-30: paleta fija por clase
-import { ButtonCommon } from '../CommonComponents';
+import { colorForClass } from '../../utils/detectionColors';
 
 interface SliderProps {
   label: string;
@@ -29,16 +29,22 @@ function SliderField({ label, value, min, max, step, onChange }: SliderProps) {
         onChange={(e) => onChange(Number(e.target.value))}
         className="flex-1 accent-[#2f6fe4]"
       />
-      <span className="text-[12px] text-[#1f2430] w-8 text-right tabular-nums">{value}</span>
+      <span className="text-[12px] text-[#1f2430] w-8 tabular-nums text-right">{value}</span>
     </div>
   );
 }
 
-/** Stream en vivo de /ws/inference-stream: video + detecciones YOLO incrustadas por frame. */
-export function LiveInferenceViewer() {
+export function LiveInferenceViewer({ confThreshold }: { confThreshold?: number }) {
   const [cameraId, setCameraId] = useState('0');
   const [isActive, setIsActive] = useState(false);
-  const [conf, setConf] = useState(0.25);
+  const initConf = confThreshold != null ? confThreshold : 0.25;
+  const [conf, setConf] = useState(initConf);
+
+  // Sincroniza conf interna con el umbral externo cada vez que cambia
+  useEffect(() => {
+    if (confThreshold != null) setConf(confThreshold);
+  }, [confThreshold]);
+
   const [iou, setIou] = useState(0.45);
   const [inferEveryNFrames, setInferEveryNFrames] = useState(3);
 
@@ -56,40 +62,23 @@ export function LiveInferenceViewer() {
             className="h-8 w-20 px-2 rounded-lg border border-[#e2e5ea] text-[13px]"
             aria-label="ID de cámara"
           />
-          <ButtonCommon variant="secondary" onClick={() => setIsActive((v) => !v)}>
+          <button
+            onClick={() => setIsActive((v) => !v)}
+            className="text-sm py-1.5 px-3 rounded-lg border border-[#d5d8dc] bg-transparent cursor-pointer hover:bg-[#f7f8fa] transition-colors"
+          >
             {isActive ? 'Detener' : 'Conectar'}
-          </ButtonCommon>
+          </button>
         </div>
       </div>
 
-      {/* T-27: Sliders */}
       <div className="flex flex-col gap-1.5">
-        <SliderField
-          label="Confianza mín."
-          value={conf}
-          min={0.05}
-          max={0.95}
-          step={0.05}
-          onChange={setConf}
-        />
+        <SliderField label="Confianza mín." value={conf} min={0.05} max={0.95} step={0.05} onChange={setConf} />
         <SliderField label="IoU" value={iou} min={0.05} max={0.95} step={0.05} onChange={setIou} />
-        <SliderField
-          label="Inferir cada N frames"
-          value={inferEveryNFrames}
-          min={1}
-          max={10}
-          step={1}
-          onChange={setInferEveryNFrames}
-        />
+        <SliderField label="Inferir cada N frames" value={inferEveryNFrames} min={1} max={10} step={1} onChange={setInferEveryNFrames} />
       </div>
 
       {isActive && (
-        <LiveInferenceStream
-          cameraId={cameraId}
-          conf={conf}
-          iou={iou}
-          inferEveryNFrames={inferEveryNFrames}
-        />
+        <LiveInferenceStream cameraId={cameraId} conf={conf} iou={iou} inferEveryNFrames={inferEveryNFrames} />
       )}
     </section>
   );
@@ -123,7 +112,7 @@ function LiveInferenceStream({ cameraId, conf, iou, inferEveryNFrames }: LiveInf
       boxes={detections.map((d) => ({
         bbox: d.bbox,
         label: `${d.className ?? `clase ${d.classId}`} ${Math.round(d.confidence * 100)}%`,
-        color: colorForClass(d.classId), // T-30: mismo color por clase que en Monitoreo en vivo
+        color: colorForClass(d.classId),
       }))}
     />
   );
