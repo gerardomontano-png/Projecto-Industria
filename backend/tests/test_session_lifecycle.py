@@ -28,6 +28,7 @@ import pytest
 from app.services import camera_session_manager as manager_module
 from app.services.camera_session_manager import (
     CameraMismatchError,
+    InvalidCameraIdError,
     CameraSessionManager,
     ClientSessionEndedError,
     NoClientConnectedError,
@@ -246,14 +247,16 @@ def test_c2_desconectar_sin_cliente(manager, camera):
 
 
 def test_c2_cliente_pide_otra_camara(manager, camera):
+    # MVP: solo existe la cámara "0"; otra cámara se rechaza antes de comparar
+    # con la sesión activa (CAMERA_MISMATCH ya no es alcanzable con un solo id).
     async def escenario():
         await manager.start("0")
         await manager.connect_client("1", "cliente-1")
 
-    with pytest.raises(CameraMismatchError) as info:
+    with pytest.raises(InvalidCameraIdError) as info:
         run(escenario())
 
-    assert info.value.code == "CAMERA_MISMATCH"
+    assert info.value.code == "INVALID_CAMERA_ID"
     assert manager.state == SessionStatus.RUNNING
 
 

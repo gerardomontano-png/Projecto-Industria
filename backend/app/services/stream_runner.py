@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
@@ -41,8 +43,25 @@ from app.services.redaction import redact_source, redact_text
 from app.services.stream_protocol import encode_ws_message
 
 InferFn = Callable[[np.ndarray], list]
+# Recibe cada mensaje JSON de control que envía el cliente (p. ej. {"type": "config"})
+MessageFn = Callable[[dict[str, Any]], None]
+
+# Logger de uvicorn: los motivos de cierre aparecen en la consola del servidor
+logger = logging.getLogger("uvicorn.error")
 
 STREAM_ERROR_CODE = "STREAM_ERROR"
+
+
+class StreamTaskError(RuntimeError):
+    """Error controlado de una tarea del stream (p. ej. la inferencia).
+
+    `code` llega al cliente en el mensaje de cierre, para que sepa si tiene
+    sentido reintentar (INFERENCE_ERROR) o debe corregir la petición (INVALID_ROI).
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 # Código de cierre WebSocket para cada causa de rechazo o de fin de sesión
 CLOSE_CODES: dict[str, int] = {
@@ -57,6 +76,9 @@ CLOSE_CODES: dict[str, int] = {
     "SERVICE_SHUTDOWN": 1001,
     "CAMERA_READ_ERROR": 1011,
     "CAMERA_STALLED": 1011,          # la cámara se estancó y no se pudo recuperar
+    "INVALID_CAMERA_ID": 1008,       # política: el MVP solo acepta la cámara configurada
+    "INVALID_ROI": 1008,             # política: el ROI pedido no cabe en el frame
+    "INFERENCE_ERROR": 1011,
     STREAM_ERROR_CODE: 1011,
 }
 
@@ -117,11 +139,25 @@ async def _send_loop(
         session.delivery.frames_sent += 1
 
 
-async def _receive_loop(websocket: WebSocket) -> None:
+async def _receive_loop(websocket: WebSocket, on_message: Optional[MessageFn] = None) -> None:
+    """Detecta la desconexión y entrega al stream los mensajes de control del cliente.
+
+    Un mensaje mal formado se ignora (con aviso en el log): no debe cortar el video.
+    """
     while True:
         message = await websocket.receive()
         if message["type"] == "websocket.disconnect":
             return
+        text = message.get("text")
+        if on_message is None or not text:
+            continue
+        try:
+            payload = json.loads(text)
+            if not isinstance(payload, dict):
+                raise ValueError("se esperaba un objeto JSON")
+            on_message(payload)
+        except (ValueError, TypeError) as exc:
+            logger.warning("Mensaje de control ignorado: %s", exc)
 
 
 async def _inference_loop(
@@ -148,11 +184,12 @@ async def _run_tasks(
     camera_id: str,
     infer: Optional[InferFn],
     infer_every_n_frames: int,
+    on_message: Optional[MessageFn] = None,
 ) -> None:
     settings = get_settings()
     detections = _Detections()
 
-    receiver = asyncio.create_task(_receive_loop(websocket))
+    receiver = asyncio.create_task(_receive_loop(websocket, on_message))
     tasks = [
         receiver,
         asyncio.create_task(
@@ -188,6 +225,18 @@ async def _run_tasks(
             websocket, camera_id, error.code, redact_text(str(error)), close_code
         )
         return
+    if isinstance(error, StreamTaskError):
+        logger.warning("Stream cerrado (%s): %s", error.code, redact_text(str(error)))
+        session.note_error(str(error))
+        await _notify_and_close(
+            websocket,
+            camera_id,
+            error.code,
+            redact_text(str(error)),
+            CLOSE_CODES.get(error.code, 1011),
+        )
+        return
+    logger.error("Stream cerrado por error interno: %r", error)
     session.record_error(str(error))
     await _notify_and_close(
         websocket, camera_id, STREAM_ERROR_CODE, redact_text(str(error)), 1011
@@ -201,6 +250,7 @@ async def serve_camera_stream(
     ready_description: str,
     infer: Optional[InferFn] = None,
     infer_every_n_frames: int = 1,
+    on_message: Optional[MessageFn] = None,
 ) -> None:
     """
     Atiende un cliente WebSocket de principio a fin.
@@ -228,6 +278,7 @@ async def serve_camera_stream(
         description = (
             _BUSY_DESCRIPTION if exc.code == "CAMERA_BUSY" else redact_text(str(exc), camera_id)
         )
+        logger.warning("WebSocket rechazado (%s): %s", exc.code, description)
         await _notify_and_close(
             websocket, public_id, exc.code, description, CLOSE_CODES.get(exc.code, 1011)
         )
@@ -249,7 +300,9 @@ async def serve_camera_stream(
                 "description": ready_description,
             }
         )
-        await _run_tasks(websocket, session, slot, public_id, infer, infer_every_n_frames)
+        await _run_tasks(
+            websocket, session, slot, public_id, infer, infer_every_n_frames, on_message
+        )
     except WebSocketDisconnect:
         pass
     finally:

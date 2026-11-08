@@ -15,18 +15,11 @@ Ejecución individual:
 from __future__ import annotations
 
 
-def _filter_preds(preds, conf):
-    """Copia exacta del filtro de InferenceService.classify (L178-180)."""
-    if conf is not None:
-        return [p for p in preds if p["confidence"] >= conf]
-    return preds
+from app.services.inference_service import _filter_by_confidence
 
-
-def _filter_items(items, conf):
-    """Copia exacta del filtro de InferenceService.ocr (L214-216)."""
-    if conf is not None:
-        return [i for i in items if i["confidence"] >= conf]
-    return items
+# classify y ocr usan el mismo filtro real del servicio.
+_filter_preds = _filter_by_confidence
+_filter_items = _filter_by_confidence
 
 
 # ================================================================== #

@@ -3,14 +3,20 @@
  * T-13: Canvas rAF draw loop, ResizeObserver, Worker integration, bbox overlay
  * T-15: Exponential backoff reconnect
  * T-16: Watchdog for frozen streams
+ *
+ * HU-08: la URL del WebSocket se estabiliza con un debounce (mover un ROI o un
+ * slider no debe abrir y cerrar la cámara en cada evento) y el ROI normalizado
+ * se convierte a píxeles con la resolución REAL del frame recibido.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { FrameMetadata } from '../types';
 import type { FrameWorkerResult } from '../workers/frameDeserializer';
 import { clearDetections, redrawDetections } from '../utils/detectionDrawing';
 import { computeContainFit } from '../utils/bboxTransform';
 import { FrameBuffer } from '../utils/frameBuffer';
 import { WS_URL } from '../config';
+import { roiToBackendParams, type NormalizedROI } from '../utils/roiUtils';
+import { useDebouncedValue } from './useDebouncedValue';
 import {
   flushLiveInferenceFrame,
   recordLiveInferenceFrame,
@@ -21,15 +27,28 @@ const STREAM_WS_URL = `${WS_URL}/ws/stream`;
 const INFERENCE_WS_URL = `${WS_URL}/ws/inference-stream`;
 /** T-015: tiempo máximo de caída continua antes de pasar a 'disconnected' y dejar de reintentar (2 min). */
 const MAX_RECONNECT_MS = 120_000;
+/** Espera tras el último cambio de parámetros antes de reconectar el WebSocket. */
+const RECONNECT_DEBOUNCE_MS = 400;
+/**
+ * Errores que no se arreglan reintentando: la petición es inválida. Reintentar
+ * solo abriría y cerraría la cámara en bucle (ver consola del backend).
+ */
+const NON_RETRYABLE_ERRORS = new Set(['INVALID_CAMERA_ID', 'INVALID_ROI', 'CAMERA_MISMATCH']);
 
 interface CameraStreamOptions {
   /** 'inference' abre /ws/inference-stream y cada frame trae sus detecciones */
   mode?: 'stream' | 'inference';
   modelId?: string;
+  /** Umbral de confianza; se aplica en vivo (mensaje por el socket), sin reconectar */
   conf?: number;
   iou?: number;
   inferEveryNFrames?: number;
   roi?: { x1: number; y1: number; x2: number; y2: number } | null;
+  /**
+   * ROI en coordenadas normalizadas (0–1). Se convierte a píxeles con el tamaño
+   * real del frame que entrega la cámara; tiene prioridad sobre `roi`.
+   */
+  roiNormalized?: NormalizedROI | null;
 }
 
 function buildWsUrl(cameraId: string, options: CameraStreamOptions): string {
@@ -38,7 +57,7 @@ function buildWsUrl(cameraId: string, options: CameraStreamOptions): string {
 
   if (options.mode === 'inference') {
     if (options.modelId) params.set('model_id', options.modelId);
-    if (options.conf !== undefined) params.set('conf', String(options.conf));
+    // conf NO va en la URL: cambiarlo reabriría la cámara. Se envía en vivo por el socket.
     if (options.iou !== undefined) params.set('iou', String(options.iou));
     if (options.inferEveryNFrames !== undefined) {
       params.set('infer_every_n_frames', String(options.inferEveryNFrames));
@@ -53,6 +72,12 @@ function buildWsUrl(cameraId: string, options: CameraStreamOptions): string {
 
   const base = options.mode === 'inference' ? INFERENCE_WS_URL : STREAM_WS_URL;
   return `${base}?${params.toString()}`;
+}
+
+/** HU-08: envía al backend el umbral vigente por el socket abierto, sin reconectar. */
+function sendLiveConfig(ws: WebSocket, conf: number | undefined): void {
+  if (conf === undefined || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'config', conf }));
 }
 
 // ---------------------------------------------------------------------------
@@ -126,29 +151,38 @@ export function useCameraStream(
 
   // Mutable refs that must not trigger re-renders
   const frameBuffer = useRef(new FrameBuffer(3));
-  const backoffRef = useRef(500);
-  /** T-015: instante en que empezó la caída actual; null si el stream está sano. */
-  const downSinceRef = useRef<number | null>(null);
-  const destroyedRef = useRef(false);
-  const connectRef = useRef<() => void>(() => {});
+  /** Socket vigente; solo lo usa el efecto que envía la configuración en vivo */
   const wsRef = useRef<WebSocket | null>(null);
+  /** Umbral a enviar al backend (solo en modo inferencia) */
+  const liveConfRef = useRef<number | undefined>(undefined);
   const rafRef = useRef<number | null>(null);
-  const lastFrameAtRef = useRef(0);
   const naturalSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const detectionsRef = useRef<LocalizationDetection[]>([]);
-  const wsUrl = buildWsUrl(cameraId, options);
   const lastDrawnRef = useRef<DrawnFrame | null>(null);
+
+  // El ROI normalizado solo se puede pasar a píxeles cuando se conoce la
+  // resolución real; hasta entonces se transmite sin ROI.
+  const { roiNormalized } = options;
+  const pixelRoi = useMemo(() => {
+    if (roiNormalized === undefined) return options.roi ?? null;
+    if (!roiNormalized || !naturalSize) return null;
+    return roiToBackendParams(roiNormalized, naturalSize);
+  }, [roiNormalized, naturalSize, options.roi]);
+  const wsUrl = useDebouncedValue(
+    buildWsUrl(cameraId, { ...options, roi: pixelRoi }),
+    RECONNECT_DEBOUNCE_MS
+  );
 
   // Datos del análisis en vivo para el "último evento". null fuera del modo inferencia:
   // el stream sin modelo no es un evento de inferencia y no debe pisar el guardado.
   const liveEventMetaRef = useRef<Omit<LiveInferenceFrame, 'jpeg' | 'detections'> | null>(null);
   const isInference = options.mode === 'inference';
-  const { modelId, roi } = options;
+
+  const { modelId } = options;
   useEffect(() => {
     liveEventMetaRef.current = isInference
-      ? { cameraId, modelId: modelId ?? null, roi: roi ?? null }
+      ? { cameraId, modelId: modelId ?? null, roi: pixelRoi }
       : null;
-  }, [cameraId, isInference, modelId, roi]);
+  }, [cameraId, isInference, modelId, pixelRoi]);
 
   // T-13: ResizeObserver — runs once, canvas is always in DOM
   useEffect(() => {
@@ -223,6 +257,14 @@ export function useCameraStream(
   }, []);
 
   // T-11 + T-13 + T-15 + T-16: WebSocket + Worker + reconnect + watchdog
+  //
+  // Todo el estado de la conexión es LOCAL a esta ejecución del efecto. Antes
+  // vivía en refs compartidas (destroyedRef, wsRef, connectRef): al cambiar la
+  // URL (iniciar inspección, dibujar un ROI) el `onclose` tardío del socket
+  // viejo veía destroyedRef=false del efecto nuevo, borraba wsRef y programaba
+  // otra conexión. El socket que tenía la cámara quedaba huérfano, abierto y
+  // entregando frames a un worker ya terminado: imagen congelada y CAMERA_BUSY
+  // en bucle para todas las conexiones siguientes.
   useEffect(() => {
     /** Olvida el último frame pintado y limpia la capa de detecciones */
     const resetDrawnFrame = () => {
@@ -231,10 +273,14 @@ export function useCameraStream(
       if (detectionCanvasRef.current) clearDetections(detectionCanvasRef.current);
     };
 
-    destroyedRef.current = false;
-    backoffRef.current = 500;
-    downSinceRef.current = null;
-    lastFrameAtRef.current = 0;
+    let disposed = false;
+    let current: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let backoff = 500;
+    /** T-015: instante en que empezó la caída actual; null si el stream está sano. */
+    let downSince: number | null = null;
+    let lastFrameAt = 0;
+
     frameBuffer.current.clear();
     resetDrawnFrame();
 
@@ -244,9 +290,11 @@ export function useCameraStream(
     });
 
     worker.onmessage = (event: MessageEvent<FrameWorkerResult>) => {
+      if (disposed) return;
       const { metadata, jpeg } = event.data;
-      lastFrameAtRef.current = Date.now();
-      downSinceRef.current = null; // T-015: llegó un frame, la caída terminó
+      lastFrameAt = Date.now();
+      downSince = null; // T-015: llegó un frame, la caída terminó
+      backoff = 500; // la conexión funciona de verdad: se reinicia la espera
       frameBuffer.current.push({ jpeg, metadata });
 
       const liveMeta = liveEventMetaRef.current;
@@ -255,33 +303,54 @@ export function useCameraStream(
       }
     };
 
-    // T-15: connect function stored in ref to avoid stale closures
+    function scheduleReconnect() {
+      // T-015: cuenta la caída desde el primer cierre; si supera el tope, se rinde
+      if (downSince === null) downSince = Date.now();
+      if (Date.now() - downSince >= MAX_RECONNECT_MS) {
+        setConnectionState('disconnected');
+        return;
+      }
+      // T-15: exponential backoff. No se reinicia en `onopen`: un rechazo como
+      // CAMERA_BUSY abre y cierra el socket, y reintentaría cada 500 ms sin fin.
+      setConnectionState('reconnecting');
+      retryTimer = setTimeout(connect, backoff);
+      backoff = Math.min(backoff * 2, 30_000);
+    }
+
     function connect() {
-      if (destroyedRef.current) return;
+      retryTimer = null;
+      if (disposed) return;
 
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'blob';
+      current = ws;
       wsRef.current = ws;
+      /** Código de error que el backend envió antes de cerrar (p. ej. INVALID_ROI) */
+      let closeReason: string | null = null;
 
       ws.onopen = () => {
-        backoffRef.current = 500;
+        if (disposed || ws !== current) return;
         // T-015: la conexión nueva aún no ha dado frames; sin esto el watchdog (T-16)
         // usa la hora del último frame de la conexión anterior y la cierra al instante.
-        lastFrameAtRef.current = 0;
+        lastFrameAt = 0;
         frameBuffer.current.clear(); // T-015: volvió la conexión; descarta frames viejos del corte
+        sendLiveConfig(ws, liveConfRef.current);
         setIsConnected(true);
         setConnectionState('connected');
         setError(null);
       };
 
       ws.onmessage = async (event: MessageEvent) => {
+        if (disposed || ws !== current) return;
         if (typeof event.data === 'string') {
           try {
             const handshake = JSON.parse(event.data) as {
               connected: boolean;
+              error?: string | null;
               description?: string;
             };
             if (!handshake.connected) {
+              closeReason = handshake.error ?? null;
               setError(handshake.description ?? 'No se detectó ninguna cámara.');
             }
           } catch {
@@ -293,63 +362,69 @@ export function useCameraStream(
 
         // Transfer ArrayBuffer to worker (zero-copy)
         const buffer = await event.data.arrayBuffer();
+        if (disposed) return;
         worker.postMessage(buffer, [buffer]);
       };
 
-      ws.onerror = () => setError('Error en la conexión WebSocket');
+      ws.onerror = () => {
+        if (!disposed && ws === current) setError('Error en la conexión WebSocket');
+      };
 
       ws.onclose = () => {
+        // Un socket que ya no es el vigente no toca el estado de nadie
+        if (disposed || ws !== current) return;
+        current = null;
+        if (wsRef.current === ws) wsRef.current = null;
         setIsConnected(false);
-        wsRef.current = null;
         // Desconexión: asegura que el último frame analizado quede guardado.
         flushLiveInferenceFrame();
         // Sin stream no se deben quedar cajas ni datos congelados del último frame
         resetDrawnFrame();
         setFrameMetadata(null);
-        if (!destroyedRef.current) {
-          // T-015: cuenta la caída desde el primer cierre; si supera el tope, se rinde
-          if (downSinceRef.current === null) downSinceRef.current = Date.now();
-          if (Date.now() - downSinceRef.current >= MAX_RECONNECT_MS) {
-            setConnectionState('disconnected');
-            return;
-          }
-          // T-15: exponential backoff
-          setConnectionState('reconnecting');
-          setTimeout(connectRef.current, backoffRef.current);
-          backoffRef.current = Math.min(backoffRef.current * 2, 30_000);
+        // Petición inválida: reintentar no la arregla, solo reabriría la cámara en bucle
+        if (closeReason && NON_RETRYABLE_ERRORS.has(closeReason)) {
+          setConnectionState('disconnected');
+          return;
         }
+        scheduleReconnect();
       };
     }
 
-    connectRef.current = connect;
-
     // Start initial connection after a tick (StrictMode safety)
-    const initTimer = setTimeout(() => {
+    retryTimer = setTimeout(() => {
       setConnectionState('connecting');
       connect();
     }, 0);
 
     // T-16: Watchdog — check for frozen stream every second
     const watchdogInterval = setInterval(() => {
-      const ws = wsRef.current;
+      const ws = current;
       if (ws && ws.readyState === WebSocket.OPEN) {
-        if (lastFrameAtRef.current > 0 && Date.now() - lastFrameAtRef.current > 5000) {
+        if (lastFrameAt > 0 && Date.now() - lastFrameAt > 5000) {
           ws.close(); // triggers reconnect via onclose
         }
       }
     }, 1000);
 
     return () => {
-      destroyedRef.current = true;
-      clearTimeout(initTimer);
+      disposed = true;
+      if (retryTimer !== null) clearTimeout(retryTimer);
       clearInterval(watchdogInterval);
       worker.terminate();
       flushLiveInferenceFrame();
-      const ws = wsRef.current;
-      if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
-      wsRef.current = null;
+      // Se cierra también si sigue en CONNECTING: si no, al abrir tomaría la cámara
+      if (current && current.readyState < WebSocket.CLOSING) current.close();
+      if (wsRef.current === current) wsRef.current = null;
+      current = null;
     };
   }, [wsUrl]);
+
+  // HU-08: el umbral de confianza viaja por el socket abierto, sin reconectar
+  useEffect(() => {
+    liveConfRef.current = isInference ? options.conf : undefined;
+    const ws = wsRef.current;
+    if (ws) sendLiveConfig(ws, liveConfRef.current);
+  }, [isInference, options.conf]);
 
   return {
     canvasRef,

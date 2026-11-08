@@ -73,6 +73,33 @@ def resolve_roi_request(
     return resolve_roi(roi, image)
 
 
+def clamp_roi_points(
+    image: np.ndarray,
+    x1: int | None,
+    y1: int | None,
+    x2: int | None,
+    y2: int | None,
+) -> tuple[int | None, int | None, int | None, int | None]:
+    """Recorta un ROI por dos puntos a los límites del frame.
+
+    Pensado para el stream en vivo: el cliente calcula el ROI con la resolución
+    que cree tener (y con redondeos), así que unos píxeles de más no deben
+    tumbar la conexión. Si no hay ROI completo se devuelve tal cual, para que
+    `resolve_roi_request` aplique sus validaciones. Un ROI que queda vacío tras
+    el recorte se sigue rechazando allí.
+    """
+    points = (x1, y1, x2, y2)
+    if any(value is None for value in points):
+        return points
+    height, width = image.shape[:2]
+    return (
+        min(max(int(x1), 0), width),
+        min(max(int(y1), 0), height),
+        min(max(int(x2), 0), width),
+        min(max(int(y2), 0), height),
+    )
+
+
 def roi_points(roi: list[int] | None) -> list[int] | None:
     if roi is None:
         return None

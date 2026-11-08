@@ -370,7 +370,18 @@ def test_c3_enmascaramiento_en_texto_libre():
     assert "10.0.0.5" in limpio  # se conserva lo útil para diagnosticar
 
 
-def test_c3_el_driver_recibe_la_url_real_pero_ninguna_salida_la_contiene(manager, guiones, caplog):
+@pytest.fixture
+def camara_rtsp(monkeypatch):
+    """La cámara única del servicio configurada como fuente RTSP con credenciales.
+
+    El MVP solo acepta `settings.camera_id`; estas pruebas de enmascarado la
+    configuran como URL con secretos (conftest limpia el caché de settings).
+    """
+    monkeypatch.setenv("CAMERA_ID", URL_SECRETA)
+    return URL_SECRETA
+
+
+def test_c3_el_driver_recibe_la_url_real_pero_ninguna_salida_la_contiene(camara_rtsp, manager, guiones, caplog):
     guiones.append((["ok"] * 3 + ["error"] * 2, "block"))
     caplog.set_level(logging.DEBUG)
 
@@ -389,7 +400,7 @@ def test_c3_el_driver_recibe_la_url_real_pero_ninguna_salida_la_contiene(manager
     assert "10.0.0.5" in json.dumps(salidas[0])            # la fuente sigue identificable
 
 
-def test_c3_errores_al_abrir_no_filtran_credenciales(monkeypatch, manager, caplog):
+def test_c3_errores_al_abrir_no_filtran_credenciales(camara_rtsp, monkeypatch, manager, caplog):
     def driver_que_falla(source: str):
         raise ConnectionError(f"no se pudo conectar a {source}")
 
@@ -402,7 +413,7 @@ def test_c3_errores_al_abrir_no_filtran_credenciales(monkeypatch, manager, caplo
     assert sin_secretos(str(info.value), caplog.text, manager.get_lifecycle_status())
 
 
-def test_c3_websocket_y_rest_no_devuelven_credenciales(monkeypatch, manager, guiones):
+def test_c3_websocket_y_rest_no_devuelven_credenciales(camara_rtsp, monkeypatch, manager, guiones):
     monkeypatch.setattr(stream_router, "camera_session_manager", manager)
     monkeypatch.setattr(cameras_router, "camera_session_manager", manager)
     app = FastAPI()

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { InferenceResult, ModelTask, ROIRect } from '../../types';
 import { useModels } from '../../hooks/useModels';
@@ -18,6 +18,8 @@ import { ImageDropzone } from './ImageDropzone';
 import { ResultPanel } from './ResultPanel';
 import { LiveInferenceViewer } from './LiveInferenceViewer';
 import { ButtonCommon } from '../CommonComponents';
+import { CONF_FLOOR, filterResultByConfidence } from '../../utils/confidenceFilter';
+import { useInferenceSettingsStore } from '../../store/inferenceSettingsStore';
 
 type RunStatus = 'idle' | 'running' | 'success' | 'error';
 
@@ -46,11 +48,12 @@ function clamp01(value: number): number {
 }
 
 export function InferencePanel() {
-  const { byTask, isLoading: isLoadingModels, error: modelsError } = useModels();
+  const { byTask, error: modelsError } = useModels();
   const [task, setTask] = useState<ModelTask>('anomaly');
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  /** T-027: umbral global de confianza que alimenta slider y endpoints */
-  const [confThreshold, setConfThreshold] = useState(0.35);
+  /** T-027 / HU-08: umbral compartido con la vista Monitor */
+  const confThreshold = useInferenceSettingsStore((s) => s.confThreshold);
+  const setConfThreshold = useInferenceSettingsStore((s) => s.setConfThreshold);
   const [image, setImage] = useState<File | null>(null);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [roiEnabled, setRoiEnabled] = useState(false);
@@ -74,7 +77,9 @@ export function InferencePanel() {
   useEffect(() => {
     const applyDefaults = () => {
       if (isRestoredRef.current) return;
-      const defaultModel = modelsForTask.find((m) => m.default) ?? modelsForTask[0];
+      // T-026: nunca preseleccionar un modelo que el selector muestra deshabilitado
+      const usable = modelsForTask.filter((m) => m.available && m.enabled);
+      const defaultModel = usable.find((m) => m.default) ?? usable[0];
       setSelectedModelId(defaultModel?.id ?? null);
       setStatus('idle');
       setResult(null);
@@ -207,29 +212,12 @@ export function InferencePanel() {
     (task !== 'anomaly' || !!referenceImage) &&
     status !== 'running';
 
-  // Filtro cliente adicional para detecciones locales (cuando el backend no filtra por conf)
-  function filterByConf<ResultT extends InferenceResult>(result: ResultT): ResultT {
-    if (confThreshold <= 0.05) return result; // mínimo casi trivial, no filtrar
-    if ((result as any).detections) {
-      const detections = (result as any).detections.filter(
-        (d: { confidence: number }) => d.confidence >= confThreshold
-      );
-      return { ...result, detections } as ResultT;
-    }
-    if ((result as any).regions) {
-      const rawRegion = result as { task: string; regions: Array<{ score: number }> };
-      if (rawRegion.task === 'anomaly') return result; // anomaly usa anomalyScore, no conf
-      const filteredRegions = rawRegion.regions.filter((r) => r.score >= confThreshold);
-      return { ...result, regions: filteredRegions } as ResultT;
-    }
-    if ((result as any).predictions) {
-      const predictions = (result as any).predictions.filter(
-        (p: { confidence: number }) => p.confidence >= confThreshold
-      );
-      return { ...result, predictions } as ResultT;
-    }
-    return result;
-  }
+  // T-027: `result` guarda la respuesta cruda (pedida con CONF_FLOOR) y el umbral
+  // se aplica al pintar; mover el slider re-filtra al instante sin re-ejecutar.
+  const visibleResult = useMemo(
+    () => (result ? filterResultByConfidence(result, confThreshold) : null),
+    [result, confThreshold]
+  );
 
   const handleRun = async () => {
     if (!selectedModelId || !image) return;
@@ -241,10 +229,10 @@ export function InferencePanel() {
       let next: InferenceResult;
       switch (task) {
         case 'localization':
-          next = await runLocalization(image, selectedModelId as string, roiParam);
+          next = await runLocalization(image, selectedModelId as string, roiParam, CONF_FLOOR);
           break;
         case 'classification':
-          next = await runClassification(image, selectedModelId as string, 5, roiParam, confThreshold);
+          next = await runClassification(image, selectedModelId as string, 5, roiParam);
           break;
         case 'ocr':
           next = await runOcr(image, selectedModelId as string, roiParam);
@@ -253,9 +241,7 @@ export function InferencePanel() {
           next = await runAnomaly(image, referenceImage as File, selectedModelId as string, roiParam);
           break;
       }
-      // Aplicar filtro adicional en cliente (T-027)
-      const filtered = filterByConf(next);
-      setResult(filtered);
+      setResult(next);
       setStatus('success');
       void recordInferenceEvent({
         source: 'image',
@@ -266,7 +252,7 @@ export function InferencePanel() {
         referenceImage: task === 'anomaly' ? (referenceImage ?? undefined) : undefined,
         referenceImageName: task === 'anomaly' ? referenceImage?.name : undefined,
         roi: roiParam ?? null,
-        result: filtered,
+        result: next,
       });
     } catch (err) {
       setErrorMessage(parseInferenceError(err));
@@ -406,8 +392,8 @@ export function InferencePanel() {
             <p className="text-xs font-semibold uppercase tracking-[0.04em] text-[#6b7280] mb-2.5">
               Resultado
             </p>
-            {result && imageUrl ? (
-              <ResultPanel result={result} imageUrl={imageUrl} confThreshold={confThreshold} />
+            {visibleResult && imageUrl ? (
+              <ResultPanel result={visibleResult} imageUrl={imageUrl} />
             ) : (
               <p className="text-[13px] text-[#6b7280]">
                 Selecciona un modelo, sube una imagen y ejecuta la inferencia.
@@ -416,7 +402,10 @@ export function InferencePanel() {
           </section>
 
           {task === 'localization' && (
-            <LiveInferenceViewer confThreshold={confThreshold} />
+            <LiveInferenceViewer
+              modelId={selectedModelId}
+              confThreshold={confThreshold}
+            />
           )}
         </main>
       </div>

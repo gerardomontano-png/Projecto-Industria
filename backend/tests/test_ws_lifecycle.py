@@ -227,7 +227,8 @@ def test_camara_distinta_a_la_de_la_sesion_se_rechaza(client, gestor):
     with client.websocket_connect("/ws/stream?camera_id=1") as ws:
         rechazo, codigo = esperar_fin(ws)
 
-    assert rechazo["error"] == "CAMERA_MISMATCH"
+    # MVP: una cámara distinta de "0" se rechaza como identificador inválido
+    assert rechazo["error"] == "INVALID_CAMERA_ID"
     assert codigo == 1008
     assert gestor.state.value == "running"
 

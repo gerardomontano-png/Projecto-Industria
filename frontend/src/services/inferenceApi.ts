@@ -88,13 +88,17 @@ interface RawLocalizationResponse {
 export function runLocalization(
   image: File,
   modelId: string,
-  roi?: InferenceRoi
+  roi?: InferenceRoi,
+  conf?: number
 ): Promise<LocalizationResult> {
+  // conf opcional: sin él, el backend usa su umbral por defecto (0.25).
+  const params: Record<string, number | string> = { ...roiParams(roi).params };
+  if (conf != null) params.conf = conf;
   return api
     .post<RawLocalizationResponse>(
       '/inference/localization',
       buildFormData(image, modelId),
-      roiParams(roi)
+      { params }
     )
     .then((r) => {
       const data = r.data;

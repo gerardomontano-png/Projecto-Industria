@@ -10,6 +10,7 @@
  */
 import type { ApiModel, ModelTask } from '../../types';
 import { useModels } from '../../hooks/useModels';
+import { ConfidenceSlider } from '../CommonComponents';
 
 interface ConfigPanelProps {
   /** Tarea actual: determina cuál sublist de modelos se muestra */
@@ -112,7 +113,8 @@ export function ConfigPanel({
                   />
                   <span className="text-[#6b7280]">
                     {info.available
-                      ? `Backend listo` + (info.loaded ? ' · carga en memoria' : '')
+                      ? 'Backend listo · ' +
+                        (info.loaded ? 'cargado en memoria' : 'se cargará en el primer uso')
                       : info.disabledReason}
                   </span>
                 </>
@@ -123,25 +125,7 @@ export function ConfigPanel({
       </div>
 
       {/* ── Umbral de confianza (T-027) ── */}
-      <div className="flex flex-col gap-1.5">
-        <label className="text-[13px] font-semibold text-[#6b7280]">
-          Umbral de confianza
-        </label>
-        <div className="flex items-center gap-3">
-          <input
-            type="range"
-            min={0.05}
-            max={0.95}
-            step={0.01}
-            value={confThreshold}
-            onChange={(e) => onConfChange(Number(e.target.value))}
-            className="flex-1 accent-[#2f6fe4]"
-          />
-          <span className="text-[13px] tabular-nums font-medium text-[#1f2430] w-12 text-right">
-            {confThreshold.toFixed(2)}
-          </span>
-        </div>
-      </div>
+      <ConfidenceSlider value={confThreshold} onChange={onConfChange} />
     </section>
   );
 }

@@ -3,7 +3,8 @@ import type { ApiModel } from '../../types';
 import { useCameraStream } from '../../hooks/useCameraStream';
 import { useMemo } from 'react';
 import { useROIStore } from '../../store/roiStore';
-import { roiToBackendParams } from '../../utils/roiUtils';
+import { useInferenceSettingsStore } from '../../store/inferenceSettingsStore';
+import { ConfidenceSlider } from '../CommonComponents';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
 import { TopBar } from '../Toolbar';
@@ -57,15 +58,20 @@ export function LiveViewer({
 }: LiveViewerProps) {
   const isInspectionRunning = job.status === 'running';
   const rois = useROIStore((s) => s.rois);
+  // HU-08: mismo umbral que el ConfigPanel de la vista Inferencia
+  const confThreshold = useInferenceSettingsStore((s) => s.confThreshold);
+  const setConfThreshold = useInferenceSettingsStore((s) => s.setConfThreshold);
 
+  // ROI normalizado (0–1): useCameraStream lo pasa a píxeles con la resolución
+  // REAL del frame. Antes se usaba camera.resolution (respaldo fijo 1920x1080):
+  // con una webcam de 640x480 el ROI quedaba fuera de la imagen, la inferencia
+  // fallaba y el WebSocket se cerraba y reabría en bucle.
   const streamRoi = useMemo(() => {
     const activeRoi = rois.find((roi) => roi.cameraId === cameraId && roi.isEnabled);
     if (!activeRoi) return null;
-    return roiToBackendParams(activeRoi, {
-      width: camera.resolution.width,
-      height: camera.resolution.height,
-    });
-  }, [rois, cameraId, camera.resolution.width, camera.resolution.height]);
+    const { x, y, width, height } = activeRoi;
+    return { x, y, width, height };
+  }, [rois, cameraId]);
 
   // El stream de inferencia en vivo solo devuelve detecciones de modelos de localización
   const jobModel = models.find((m) => m.id === job.modelId);
@@ -78,12 +84,13 @@ export function LiveViewer({
         ? {
             mode: 'inference' as const,
             modelId: job.modelId,
-            roi: streamRoi,
+            roiNormalized: streamRoi,
+            conf: confThreshold,
           }
         : {
             mode: 'stream' as const,
           },
-    [isLiveInference, job.modelId, streamRoi]
+    [isLiveInference, job.modelId, streamRoi, confThreshold]
   );
 
   const { canvasRef, detectionCanvasRef, isConnected, error, displaySize } = useCameraStream(
@@ -124,6 +131,19 @@ export function LiveViewer({
             Inspección activa
           </div>
         )}
+      </div>
+      {/* HU-08: sensibilidad de detección, se aplica en vivo sin reconectar */}
+      <div className="w-full max-w-md self-start">
+        <ConfidenceSlider
+          value={confThreshold}
+          onChange={setConfThreshold}
+          label="Sensibilidad (confianza mínima)"
+          hint={
+            isLiveInference
+              ? 'Se aplica en vivo a las detecciones.'
+              : 'Se aplicará al iniciar la inspección con un modelo de detección.'
+          }
+        />
       </div>
       {activeItem &&(
         <MenuOptions

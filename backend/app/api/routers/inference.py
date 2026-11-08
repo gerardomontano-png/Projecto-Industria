@@ -10,10 +10,16 @@ from app.schemas.inference import (
     OCRResponse,
 )
 from app.services.camera_session_manager import camera_session_manager
-from app.services.image_service import ImageInputError, decode_image, resolve_roi_request, roi_points
+from app.services.image_service import (
+    ImageInputError,
+    clamp_roi_points,
+    decode_image,
+    resolve_roi_request,
+    roi_points,
+)
 from app.services.inference_service import InferenceError, inference_service
 from app.services.model_registry import ModelRegistryError
-from app.services.stream_runner import serve_camera_stream
+from app.services.stream_runner import StreamTaskError, serve_camera_stream
 
 router = APIRouter(tags=["inference"])
 
@@ -75,6 +81,7 @@ async def localization(
 async def classification(
     image: UploadFile = File(...),
     model_id: str | None = Query(default=None),
+    conf: float | None = Query(default=None, ge=0.0, le=1.0),
     top_k: int = Query(default=5, ge=1, le=20),
     roi: str | None = Query(default=None),
     x1: int | None = Query(default=None),
@@ -85,7 +92,7 @@ async def classification(
     try:
         frame = decode_image(await image.read())
         cropped, roi_value, _ = _roi_query(frame, roi, x1, y1, x2, y2)
-        selected, predictions = inference_service.classify(cropped, model_id, top_k)
+        selected, predictions = inference_service.classify(cropped, model_id, top_k, conf)
         return {
             "model_id": selected,
             "roi": roi_value,
@@ -100,6 +107,7 @@ async def classification(
 async def ocr(
     image: UploadFile = File(...),
     model_id: str | None = Query(default=None),
+    conf: float | None = Query(default=None, ge=0.0, le=1.0),
     roi: str | None = Query(default=None),
     x1: int | None = Query(default=None),
     y1: int | None = Query(default=None),
@@ -109,7 +117,7 @@ async def ocr(
     try:
         frame = decode_image(await image.read())
         cropped, roi_value, offset = _roi_query(frame, roi, x1, y1, x2, y2)
-        selected, results = inference_service.ocr(cropped, model_id, offset)
+        selected, results = inference_service.ocr(cropped, model_id, offset, conf)
         return {
             "model_id": selected,
             "roi": roi_value,
@@ -169,10 +177,40 @@ async def inference_stream(
     x2: int | None = Query(default=None),
     y2: int | None = Query(default=None),
 ) -> None:
+    # Parámetros ajustables en vivo con {"type": "config", "conf": .., "iou": ..}
+    # sin reconectar: la cámara no se reabre por mover un slider (HU-08).
+    live = {"conf": conf, "iou": iou}
+
+    def on_message(message: dict) -> None:
+        if message.get("type") != "config":
+            raise ValueError(f"tipo de mensaje desconocido: {message.get('type')!r}")
+        updates = {}
+        for key in ("conf", "iou"):
+            if key not in message:
+                continue
+            value = message[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{key} debe ser numérico")
+            if not 0.0 <= float(value) <= 1.0:
+                raise ValueError(f"{key} debe estar entre 0 y 1")
+            updates[key] = float(value)
+        live.update(updates)
+
     def infer(frame) -> list[dict]:
-        # La captura entrega el frame completo; el ROI se aplica solo aquí.
-        cropped, _, offset = _roi_query(frame, roi, x1, y1, x2, y2)
-        _, detections = inference_service.localize(cropped, model_id, conf, iou, offset)
+        # La captura entrega el frame completo; el ROI se aplica solo aquí. En
+        # vivo el ROI se recorta al frame: el cliente no siempre conoce la
+        # resolución real de la cámara y unos píxeles de más no deben cortar
+        # el video.
+        try:
+            cropped, _, offset = _roi_query(frame, roi, *clamp_roi_points(frame, x1, y1, x2, y2))
+        except ImageInputError as exc:
+            raise StreamTaskError("INVALID_ROI", str(exc)) from exc
+        try:
+            _, detections = inference_service.localize(
+                cropped, model_id, live["conf"], live["iou"], offset
+            )
+        except (InferenceError, ModelRegistryError) as exc:
+            raise StreamTaskError("INFERENCE_ERROR", str(exc)) from exc
         return detections
 
     await serve_camera_stream(
@@ -182,4 +220,5 @@ async def inference_stream(
         "Cámara detectada. Iniciando inferencia.",
         infer=infer,
         infer_every_n_frames=infer_every_n_frames,
+        on_message=on_message,
     )

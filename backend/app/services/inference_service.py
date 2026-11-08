@@ -16,6 +16,15 @@ class InferenceError(RuntimeError):
     pass
 
 
+def _filter_by_confidence(
+    items: list[dict[str, Any]], conf: float | None
+) -> list[dict[str, Any]]:
+    """Descarta los resultados con confianza menor al umbral (sin umbral, todos)."""
+    if conf is None:
+        return items
+    return [item for item in items if item["confidence"] >= conf]
+
+
 class InferenceService:
     def __init__(self, registry: ModelRegistry | None = None) -> None:
         self.registry = registry or ModelRegistry()
@@ -155,6 +164,7 @@ class InferenceService:
         image: np.ndarray,
         model_id: str | None,
         top_k: int,
+        conf_param: float | None = None,
     ) -> tuple[str, list[dict[str, Any]]]:
         spec = self._resolve("classification", model_id)
         loaded = self._load_model(spec)
@@ -174,13 +184,14 @@ class InferenceService:
         for value, index in zip(values.detach().cpu().tolist(), indices.detach().cpu().tolist()):
             name = categories[index] if index < len(categories) else str(index)
             predictions.append({"class_id": int(index), "class_name": str(name), "confidence": float(value)})
-        return spec["id"], predictions
+        return spec["id"], _filter_by_confidence(predictions, conf_param)
 
     def ocr(
         self,
         image: np.ndarray,
         model_id: str | None,
         offset: tuple[int, int] = (0, 0),
+        conf_param: float | None = None,
     ) -> tuple[str, list[dict[str, Any]]]:
         spec = self._resolve("ocr", model_id)
         model = self._load_model(spec)
@@ -206,7 +217,7 @@ class InferenceService:
                         "polygon": map_polygon(points, offset),
                     }
                 )
-        return spec["id"], items
+        return spec["id"], _filter_by_confidence(items, conf_param)
 
     def anomaly_reference(
         self,

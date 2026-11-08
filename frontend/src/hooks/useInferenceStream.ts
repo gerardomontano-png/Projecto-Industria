@@ -1,11 +1,13 @@
 /**
  * T-27: useInferenceStream — accepts options for conf/iou/inferEveryNFrames/roi/modelId.
- * Reconnects when URL params change.
+ * Reconnects when URL params change (con debounce: arrastrar un slider no debe
+ * abrir y cerrar la cámara en cada paso).
  */
 import { useState, useEffect, useRef } from 'react';
 import type { FrameMetadata, LocalizationDetection } from '../types';
 import { parseFrameMetadata, splitFrameMessage } from '../utils/frameMetadata';
 import { WS_URL } from '../config';
+import { useDebouncedValue } from './useDebouncedValue';
 import {
   flushLiveInferenceFrame,
   recordLiveInferenceFrame,
@@ -14,6 +16,8 @@ import {
 
 const WS_BASE = `${WS_URL}/ws/inference-stream`;
 const NO_DETECTIONS: LocalizationDetection[] = [];
+/** Espera tras el último cambio de parámetros antes de reconectar el WebSocket. */
+const RECONNECT_DEBOUNCE_MS = 400;
 
 interface InferenceStreamOptions {
   modelId?: string;
@@ -71,7 +75,7 @@ export function useInferenceStream(
   const prevUrlRef = useRef<string | null>(null);
 
   // Serialize URL as dependency so we reconnect when any option changes
-  const wsUrl = buildWsUrl(cameraId, options);
+  const wsUrl = useDebouncedValue(buildWsUrl(cameraId, options), RECONNECT_DEBOUNCE_MS);
 
   // Datos del análisis en vivo para el "último evento" guardado en IndexedDB.
   const liveEventMetaRef = useRef<Omit<LiveInferenceFrame, 'jpeg' | 'detections'> | null>(null);

@@ -71,6 +71,11 @@ Compatibilidad: get_status() conserva el contrato de M01 (en `idle` responde
 exactamente {"status": "idle", "active_client": None}); el estado completo del
 ciclo de vida se consulta con get_lifecycle_status().
 
+Alcance del MVP: una sola cámara (`settings.camera_id`, "0" por defecto). Todo
+camera_id distinto se rechaza con INVALID_CAMERA_ID antes de tocar el candado
+o el hardware, tanto en connect_client() como en start(); así ambos WebSockets
+y la API REST aplican la misma regla.
+
 Límite conocido: el candado vive en memoria del proceso. El servicio debe
 ejecutarse con un solo worker de uvicorn para que la exclusión sea real.
 """
@@ -88,6 +93,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 import numpy as np
 
+from app.core.config import get_settings
 from app.core.limits import (
     FPS_WINDOW_FRAMES,
     FRAME_STALE_TIMEOUT_S,
@@ -416,6 +422,13 @@ class NoClientConnectedError(SessionError):
     """Se pidió desconectar a un cliente, pero no hay ninguno."""
 
     code = "NO_CLIENT_CONNECTED"
+
+
+class InvalidCameraIdError(SessionError):
+    """El camera_id pedido no es la cámara del alcance del MVP."""
+
+    code = "INVALID_CAMERA_ID"
+    http_status = 400
 
 
 class CameraMismatchError(SessionError):
@@ -818,6 +831,20 @@ class CameraSessionManager:
             event.value, camera_id, client_id, reason,
         )
 
+    @staticmethod
+    def allowed_camera_id() -> str:
+        """Única cámara aceptada por el servicio (alcance del MVP)."""
+        return get_settings().camera_id
+
+    def _ensure_valid_camera(self, camera_id: str) -> None:
+        """Rechaza cualquier cámara distinta a la configurada, sin abrir nada."""
+        allowed = self.allowed_camera_id()
+        if camera_id != allowed:
+            raise InvalidCameraIdError(
+                f"Cámara '{redact_source(camera_id)}' no válida: el servicio solo "
+                f"acepta camera_id={redact_source(allowed)}."
+            )
+
     def _ensure_accepting(self) -> None:
         if not self._accepting:
             raise ServiceShuttingDownError(
@@ -943,7 +970,9 @@ class CameraSessionManager:
             SessionAlreadyActiveError: ya hay una sesión iniciada.
             SessionCameraError: la fuente no pudo abrirse.
             ServiceShuttingDownError: el servicio se está apagando.
+            InvalidCameraIdError: camera_id no es la cámara del MVP.
         """
+        self._ensure_valid_camera(camera_id)
         return await self._run_detached(self._start(camera_id, started_by))
 
     async def _start(self, camera_id: str, started_by: StartedBy) -> CameraSession:
@@ -983,7 +1012,13 @@ class CameraSessionManager:
             CameraMismatchError: la sesión activa usa otra cámara.
             SessionCameraError: la fuente no pudo abrirse.
             ServiceShuttingDownError: el servicio se está apagando.
+            InvalidCameraIdError: camera_id no es la cámara del MVP.
         """
+        try:
+            self._ensure_valid_camera(camera_id)
+        except InvalidCameraIdError:
+            self._service.client_rejections += 1
+            raise
         request = _Request()
         try:
             return await self._run_detached(
