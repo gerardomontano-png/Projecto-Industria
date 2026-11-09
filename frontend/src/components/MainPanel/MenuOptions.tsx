@@ -1,4 +1,5 @@
 import type { Camera, CameraConnectionStatus } from "../../types";
+import { AccuracyColorPanel } from "./AccuracyColorPanel";
 import { ROICoordinatesPanel } from "./ROICoordinatesPanel";
 
 interface MenuOptions{
@@ -22,12 +23,8 @@ export function MenuOptions({cameraId, naturalWidth, naturalHeight, menuOptionSe
         )
         case "Clasificación":
             return(
-            <div className="w-5/6">    
-                <ROICoordinatesPanel
-                cameraId={cameraId}
-                naturalWidth={naturalWidth}
-                naturalHeight={naturalHeight}
-                />
+            <div className="w-5/6">   
+            <AccuracyColorPanel></AccuracyColorPanel>
             </div>
         )
     }
