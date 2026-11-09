@@ -20,11 +20,11 @@ export function ColorPickerPopup({ currentColor, onSave, onClose }: ColorPickerP
   const [selected, setSelected] = useState(currentColor);
 
   return (
-    <div className="relative z-50 bg-white rounded-3xl shadow-xl p-4 w-56">
+    <div className="relative z-50 bg-white dark:bg-[#393939] dark:text-white rounded-3xl shadow-xl p-4 w-56">
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-3 text-[#474747] hover:text-[#1f2430] cursor-pointer"
+        className="absolute right-3 text-[#474747] dark:text-[#f7f7f7] dark:hover:text-[#BFBFBF] hover:text-[#1f2430] cursor-pointer"
       >
         <DeleteXMenu></DeleteXMenu>
       </button>
