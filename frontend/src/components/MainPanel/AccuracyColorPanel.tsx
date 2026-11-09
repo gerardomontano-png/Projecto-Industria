@@ -1,31 +1,31 @@
 import { useState } from 'react';
 import { Pencil } from 'lucide-react';
 import { ColorPickerPopup } from '../Toolbar/ColorPickerPopup';
+import { useDetectionColorStore } from '../../store/detectionColorStore';
 
 interface AccuracyLevel {
   label: string;
   color: string;
   threshold: number;
-  operator: '>=' | '<=';
 }
 
 const DEFAULT_LEVELS: AccuracyLevel[] = [
   { label: 'Alta',  color: '#B4D678', threshold: 70, operator: '≥' },
-  { label: 'Media', color: '#A3C2DF', threshold: 50, operator: '≥' },
-  { label: 'Baja',  color: '#BD7066', threshold: 30, operator: '≤' },
+  { label: 'Media', color: '#A3C2DF', threshold: 31, operator: '≥' },
+  { label: 'Baja',  color: '#BD7066', threshold: 30, operator: '<=' },
 ];
 
 export function AccuracyColorPanel() {
-  const [levels, setLevels] = useState<AccuracyLevel[]>(DEFAULT_LEVELS);
+  const { levels, updateLevel } = useDetectionColorStore();
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   const updateColor = (index: number, color: string) => {
-    setLevels((prev) => prev.map((l, i) => (i === index ? { ...l, color } : l)));
+    updateLevel(index, { color });
     setEditingIndex(null);
   };
 
   const updateThreshold = (index: number, value: number) => {
-    setLevels((prev) => prev.map((l, i) => (i === index ? { ...l, threshold: value } : l)));
+    updateLevel(index, { threshold: value });
   };
 
   return (
