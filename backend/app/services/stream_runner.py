@@ -39,6 +39,7 @@ from app.services.camera_session_manager import (
 from app.services.frame_slot import FrameSlot, FrameSlotClosed
 from app.services.redaction import redact_source, redact_text
 from app.services.stream_protocol import encode_ws_message
+from app.services.roi_contract import ROIValidationError
 
 InferFn = Callable[[np.ndarray], list]
 
@@ -125,20 +126,42 @@ async def _receive_loop(websocket: WebSocket) -> None:
 
 
 async def _inference_loop(
+    websocket: WebSocket,
     slot: FrameSlot,
     infer: InferFn,
     every_n_frames: int,
     detections: _Detections,
 ) -> None:
+    """
+    Calcula detecciones sobre el frame más reciente.
+
+    Una ROI inválida NO cierra el stream: se avisa al cliente con un mensaje
+    estructurado y la transmisión de video continúa (contrato de ROI).
+    """
     loop = asyncio.get_running_loop()
     last_seq = 0
+    roi_avisada = False
     while True:
-        # Primer frame disponible y luego uno cada N; si la inferencia tardó
-        # más que eso, se toma directamente el más reciente.
         after = last_seq + every_n_frames - 1 if last_seq else 0
         packet = await slot.next(after)
-        detections.items = await loop.run_in_executor(None, infer, packet.frame)
+        try:
+            detections.items = await loop.run_in_executor(None, infer, packet.frame)
+            roi_avisada = False
+        except ROIValidationError as exc:
+            detections.items = []
+            if not roi_avisada:
+                roi_avisada = True
+                with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError):
+                    await websocket.send_json(
+                        {
+                            "connected": True,
+                            "error": exc.code,
+                            "description": str(exc),
+                        }
+                    )
         last_seq = packet.seq
+
+    
 
 
 async def _run_tasks(
@@ -162,8 +185,7 @@ async def _run_tasks(
     if infer is not None:
         tasks.append(
             asyncio.create_task(
-                _inference_loop(slot, infer, infer_every_n_frames, detections)
-            )
+                _inference_loop(websocket, slot, infer, infer_every_n_frames, detections))
         )
 
     try:
