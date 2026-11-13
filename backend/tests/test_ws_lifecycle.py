@@ -90,9 +90,6 @@ def stats(monkeypatch) -> CameraStats:
 def fake_inference(monkeypatch) -> FakeInference:
     fake = FakeInference()
     monkeypatch.setattr(inference_router, "inference_service", fake)
-    monkeypatch.setattr(
-        inference_router, "_roi_query", lambda frame, *args: (frame, None, (0, 0))
-    )
     return fake
 
 
