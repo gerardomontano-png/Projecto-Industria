@@ -10,6 +10,8 @@ import { ROICoordinatesPanel } from './ROICoordinatesPanel';
 import { MenuOptions } from './MenuOptions';
 import { DetectionCanvas } from './DetectionCanvas';
 import { StreamSessionNotice } from './StreamSessionNotice';
+import { useJobStore } from '../../store/jobStore';
+import { retryJob } from '../../store/jobErrorBridge';
 
 interface LiveViewerProps {
   camera: Camera;
@@ -56,6 +58,9 @@ export function LiveViewer({
   activeItem,
 }: LiveViewerProps) {
   const isInspectionRunning = job.status === 'running';
+  // T-036: pausa por error recuperable y último error del job
+  const jobPaused = useJobStore((s) => s.paused);
+  const jobError = useJobStore((s) => s.error);
   const rois = useROIStore((s) => s.rois);
 
   // ROI normalizado (0–1); useCameraStream lo pasa a píxeles con el tamaño real del frame.
@@ -121,10 +126,37 @@ export function LiveViewer({
         {displaySize.width > 0 && (
           <ROICanvas width={displaySize.width} height={displaySize.height} cameraId={cameraId} />
         )}
-        {isInspectionRunning && (
+        {/* T-036: "activa" solo si de verdad está inspeccionando; si reconecta, "en pausa" */}
+        {isInspectionRunning && !jobPaused && (
           <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#d64545] text-white text-[11px] font-bold uppercase tracking-widest rounded-full px-3 py-1">
             <span className="block w-2 h-2 rounded-full bg-white opacity-90 animate-pulse" />
             Inspección activa
+          </div>
+        )}
+        {isInspectionRunning && jobPaused && (
+          <div
+            role="status"
+            className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#e0a020] text-white text-[11px] font-bold uppercase tracking-widest rounded-full px-3 py-1"
+          >
+            <span className="block w-2 h-2 rounded-full bg-white opacity-90" />
+            Inspección en pausa
+          </div>
+        )}
+        {/* T-036: el job se detuvo por un error; queda visible hasta reintentar o reconfigurar */}
+        {job.status === 'error' && jobError && (
+          <div
+            role="alert"
+            className="absolute bottom-3 left-1/2 z-10 flex max-w-[90%] -translate-x-1/2 items-center gap-3 rounded-xl bg-white/95 px-4 py-2 shadow-lg dark:bg-[#2E2D2D]/95"
+          >
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-[#d64545]">
+                Inspección detenida: {jobError.title}
+              </p>
+              <p className="text-[12px] text-[#6b7280] dark:text-[#d1d5db]">{jobError.message}</p>
+            </div>
+            <ButtonCommon variant="secondary" size="large" onClick={retryJob}>
+              Reintentar
+            </ButtonCommon>
           </div>
         )}
       </div>

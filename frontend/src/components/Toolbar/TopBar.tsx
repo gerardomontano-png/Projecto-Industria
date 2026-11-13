@@ -66,7 +66,12 @@ export function TopBar({cameraName, job, onToggleInspection}: TopBarProps) {
           aria-pressed={isInspectionRunning}
           icon={<InspectIcon/>}
         >
-          Iniciar inspección
+          {/* T-036: el texto refleja el estado del job */}
+          {isInspectionRunning
+            ? 'Detener inspección'
+            : job.status === 'error'
+              ? 'Reintentar inspección'
+              : 'Iniciar inspección'}
         </ButtonCommon>
       </div>
     </header>
