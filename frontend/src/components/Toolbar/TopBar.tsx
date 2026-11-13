@@ -55,7 +55,7 @@ export function TopBar({status, cameraName, job, onToggleInspection}: TopBarProp
           aria-pressed={isInspectionRunning}
           icon={<InspectIcon/>}
         >
-          {isInspectionRunning ? 'Detener inspeccion': 'Iniciar inspección'}
+          {isInspectionRunning ? 'Detener inspección': 'Iniciar inspección'}
           {/* Iniciar inspección */}
         </ButtonCommon>
       </div>
