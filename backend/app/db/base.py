@@ -56,6 +56,10 @@ class UTCDateTime(TypeDecorator):
     impl = DateTime
     cache_ok = True
 
+    def __repr__(self) -> str:
+        # Alembic usa este repr al generar migraciones; sin prefijo de módulo
+        return "UTCDateTime()"
+
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
