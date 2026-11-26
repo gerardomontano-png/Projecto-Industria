@@ -51,6 +51,7 @@ from app.services.frame_slot import FrameSlot, FrameSlotClosed
 from app.services.redaction import redact_source, redact_text
 from app.services.stream_control import RoiConfig, RoiOutOfFrame, StreamControl, roi_to_dict
 from app.services.stream_protocol import encode_ws_message
+from app.services.roi_contract import ROIValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -189,9 +190,8 @@ def _log_late_failure(future: asyncio.Future) -> None:
         logger.warning("Una inferencia descartada terminó con error: %s", error)
 
 
-async def _pipeline_loop(
+async def _inference_loop(
     websocket: WebSocket,
-    session: CameraSession,
     slot: FrameSlot,
     camera_id: str,
     jpeg_quality: int,
@@ -201,75 +201,37 @@ async def _pipeline_loop(
     control: Optional[StreamControl] = None,
     send_lock: Optional[asyncio.Lock] = None,
 ) -> None:
+    """
+    Calcula detecciones sobre el frame más reciente.
+
+    Una ROI inválida NO cierra el stream: se avisa al cliente con un mensaje
+    estructurado y la transmisión de video continúa (contrato de ROI).
+    """
     loop = asyncio.get_running_loop()
     send_lock = send_lock or asyncio.Lock()
     last_seq = 0
-    last_inferred_seq = 0
-    inflight: Optional[asyncio.Future] = None
-
+    roi_avisada = False
     while True:
-        # Solo el frame más reciente: lo que se acumule mientras se infiere se omite.
-        packet = await slot.next(last_seq)
-        if last_seq:
-            session.delivery.frames_skipped += packet.seq - last_seq - 1
+        after = last_seq + every_n_frames - 1 if last_seq else 0
+        packet = await slot.next(after)
+        try:
+            detections.items = await loop.run_in_executor(None, infer, packet.frame)
+            roi_avisada = False
+        except ROIValidationError as exc:
+            detections.items = []
+            if not roi_avisada:
+                roi_avisada = True
+                with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError):
+                    await websocket.send_json(
+                        {
+                            "connected": True,
+                            "error": exc.code,
+                            "description": str(exc),
+                        }
+                    )
         last_seq = packet.seq
 
-        frame = packet.frame
-        height, width = frame.shape[:2]
-        if control is not None:
-            control.set_frame_size(width, height)
-            config = control.config  # instantánea: la ROI de este frame no cambia a medias
-        else:
-            config = RoiConfig()
-
-        detections: list = []
-        status = STATUS_DISABLED
-        if infer is not None:
-            status = STATUS_SKIPPED
-            due = last_inferred_seq == 0 or packet.seq - last_inferred_seq >= every_n_frames
-            if due:
-                if inflight is not None and not inflight.done():
-                    status = STATUS_BUSY
-                else:
-                    last_inferred_seq = packet.seq
-                    inflight = loop.run_in_executor(
-                        None, _call_infer, infer, frame, config.roi, control is not None
-                    )
-                    inflight.add_done_callback(_log_late_failure)
-                    try:
-                        detections, status = await asyncio.wait_for(
-                            asyncio.shield(inflight), timeout_s
-                        )
-                    except asyncio.TimeoutError:
-                        detections, status = [], STATUS_TIMEOUT
-
-        extra = {
-            "captured_at": packet.captured_at,
-            "frame_width": width,
-            "frame_height": height,
-            "detections_status": status,
-        }
-        if control is not None:
-            # Con qué ROI/versión se infirió ESTE frame
-            extra["roi"] = roi_to_dict(config.roi)
-            extra["roi_version"] = config.version
-        message = await loop.run_in_executor(
-            None,
-            functools.partial(
-                encode_ws_message,
-                frame,
-                detections,
-                session.metrics.fps_current,
-                camera_id,
-                jpeg_quality,
-                packet.seq,
-                packet.captured_at,
-                extra,
-            ),
-        )
-        async with send_lock:
-            await websocket.send_bytes(message)
-        session.delivery.frames_sent += 1
+    
 
 
 async def _run_tasks(
@@ -291,29 +253,8 @@ async def _run_tasks(
         tasks = [
             receiver,
             asyncio.create_task(
-                _pipeline_loop(
-                    websocket,
-                    session,
-                    slot,
-                    camera_id,
-                    settings.jpeg_quality,
-                    infer,
-                    infer_every_n_frames,
-                    inference_timeout_s,
-                    control,
-                    send_lock,
-                )
-            ),
-        ]
-    else:
-        detections = _Detections()
-        receiver = asyncio.create_task(_receive_loop(websocket))
-        tasks = [
-            receiver,
-            asyncio.create_task(
-                _send_loop(websocket, session, slot, camera_id, settings.jpeg_quality, detections)
-            ),
-        ]
+                _inference_loop(websocket, slot, infer, infer_every_n_frames, detections))
+        )
 
     try:
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

@@ -10,33 +10,30 @@ from app.schemas.inference import (
     OCRResponse,
 )
 from app.services.camera_session_manager import camera_session_manager
-from app.services.image_service import ImageInputError, decode_image, resolve_roi_request, roi_points
+from app.services.image_service import ImageInputError, decode_image
 from app.services.inference_service import InferenceError, inference_service
 from app.services.detections import normalize_detections
 from app.services.model_registry import ModelRegistryError
 from app.services.stream_control import RoiOutOfFrame, StreamControl
 from app.services.stream_runner import INFERENCE_TIMEOUT_S, serve_camera_stream
 
+from app.services.roi_contract import ROIValidationError
+from app.services.roi_resolver import resolve_roi_absolute, roi_points_from_xywh
+
 router = APIRouter(tags=["inference"])
 
 
 def _http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ROIValidationError):
+        return HTTPException(
+            status_code=400,
+            detail={"error": exc.code, "message": str(exc), "field": "roi"},
+        )
     if isinstance(exc, (ImageInputError, ModelRegistryError)):
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, InferenceError):
         return HTTPException(status_code=503, detail=str(exc))
     return HTTPException(status_code=500, detail=str(exc))
-
-
-def _roi_query(
-    frame,
-    roi: str | None,
-    x1: int | None,
-    y1: int | None,
-    x2: int | None,
-    y2: int | None,
-):
-    return resolve_roi_request(frame, roi, x1, y1, x2, y2)
 
 
 @router.get("/models", response_model=list[ModelInfo])
@@ -50,15 +47,15 @@ async def localization(
     model_id: str | None = Query(default=None),
     conf: float = Query(default=0.25, ge=0.0, le=1.0),
     iou: float = Query(default=0.45, ge=0.0, le=1.0),
-    roi: str | None = Query(default=None),
-    x1: int | None = Query(default=None),
-    y1: int | None = Query(default=None),
-    x2: int | None = Query(default=None),
-    y2: int | None = Query(default=None),
+    x1: float | None = Query(default=None, description="Coordenada absoluta izquierda de la ROI."),
+    y1: float | None = Query(default=None, description="Coordenada absoluta superior de la ROI."),
+    x2: float | None = Query(default=None, description="Coordenada absoluta derecha de la ROI."),
+    y2: float | None = Query(default=None, description="Coordenada absoluta inferior de la ROI."),
+    clamp: bool = Query(default=False, description="Si la ROI excede el frame, limitarla al borde en vez de rechazarla."),
 ) -> dict:
     try:
         frame = decode_image(await image.read())
-        cropped, roi_value, offset = _roi_query(frame, roi, x1, y1, x2, y2)
+        cropped, roi_value, offset = resolve_roi_absolute(frame, x1, y1, x2, y2, clamp=clamp)
         selected, detections = inference_service.localize(cropped, model_id, conf, iou, offset)
         height, width = frame.shape[:2]
         return {
@@ -66,7 +63,7 @@ async def localization(
             "image_width": width,
             "image_height": height,
             "roi": roi_value,
-            "roi_points": roi_points(roi_value),
+            "roi_points": roi_points_from_xywh(roi_value),
             "detections": detections,
         }
     except Exception as exc:
@@ -78,20 +75,20 @@ async def classification(
     image: UploadFile = File(...),
     model_id: str | None = Query(default=None),
     top_k: int = Query(default=5, ge=1, le=20),
-    roi: str | None = Query(default=None),
-    x1: int | None = Query(default=None),
-    y1: int | None = Query(default=None),
-    x2: int | None = Query(default=None),
-    y2: int | None = Query(default=None),
+    x1: float | None = Query(default=None, description="Coordenada absoluta izquierda de la ROI."),
+    y1: float | None = Query(default=None, description="Coordenada absoluta superior de la ROI."),
+    x2: float | None = Query(default=None, description="Coordenada absoluta derecha de la ROI."),
+    y2: float | None = Query(default=None, description="Coordenada absoluta inferior de la ROI."),
+    clamp: bool = Query(default=False, description="Si la ROI excede el frame, limitarla al borde en vez de rechazarla."),
 ) -> dict:
     try:
         frame = decode_image(await image.read())
-        cropped, roi_value, _ = _roi_query(frame, roi, x1, y1, x2, y2)
+        cropped, roi_value, _ = resolve_roi_absolute(frame, x1, y1, x2, y2, clamp=clamp)
         selected, predictions = inference_service.classify(cropped, model_id, top_k)
         return {
             "model_id": selected,
             "roi": roi_value,
-            "roi_points": roi_points(roi_value),
+            "roi_points": roi_points_from_xywh(roi_value),
             "predictions": predictions,
         }
     except Exception as exc:
@@ -102,20 +99,20 @@ async def classification(
 async def ocr(
     image: UploadFile = File(...),
     model_id: str | None = Query(default=None),
-    roi: str | None = Query(default=None),
-    x1: int | None = Query(default=None),
-    y1: int | None = Query(default=None),
-    x2: int | None = Query(default=None),
-    y2: int | None = Query(default=None),
+    x1: float | None = Query(default=None, description="Coordenada absoluta izquierda de la ROI."),
+    y1: float | None = Query(default=None, description="Coordenada absoluta superior de la ROI."),
+    x2: float | None = Query(default=None, description="Coordenada absoluta derecha de la ROI."),
+    y2: float | None = Query(default=None, description="Coordenada absoluta inferior de la ROI."),
+    clamp: bool = Query(default=False, description="Si la ROI excede el frame, limitarla al borde en vez de rechazarla."),
 ) -> dict:
     try:
         frame = decode_image(await image.read())
-        cropped, roi_value, offset = _roi_query(frame, roi, x1, y1, x2, y2)
+        cropped, roi_value, offset = resolve_roi_absolute(frame, x1, y1, x2, y2, clamp=clamp)
         selected, results = inference_service.ocr(cropped, model_id, offset)
         return {
             "model_id": selected,
             "roi": roi_value,
-            "roi_points": roi_points(roi_value),
+            "roi_points": roi_points_from_xywh(roi_value),
             "results": results,
         }
     except Exception as exc:
@@ -128,17 +125,17 @@ async def anomaly(
     reference_image: UploadFile = File(...),
     model_id: str | None = Query(default=None),
     difference_threshold: int | None = Query(default=None, ge=0, le=255),
-    roi: str | None = Query(default=None),
-    x1: int | None = Query(default=None),
-    y1: int | None = Query(default=None),
-    x2: int | None = Query(default=None),
-    y2: int | None = Query(default=None),
+    x1: float | None = Query(default=None, description="Coordenada absoluta izquierda de la ROI."),
+    y1: float | None = Query(default=None, description="Coordenada absoluta superior de la ROI."),
+    x2: float | None = Query(default=None, description="Coordenada absoluta derecha de la ROI."),
+    y2: float | None = Query(default=None, description="Coordenada absoluta inferior de la ROI."),
+    clamp: bool = Query(default=False, description="Si la ROI excede el frame, limitarla al borde en vez de rechazarla."),
 ) -> dict:
     try:
         frame = decode_image(await image.read())
         reference = decode_image(await reference_image.read())
-        cropped, roi_value, offset = _roi_query(frame, roi, x1, y1, x2, y2)
-        reference_cropped, _, _ = _roi_query(reference, roi, x1, y1, x2, y2)
+        cropped, roi_value, offset = resolve_roi_absolute(frame, x1, y1, x2, y2, clamp=clamp)
+        reference_cropped, _, _ = resolve_roi_absolute(reference, x1, y1, x2, y2, clamp=clamp)
         selected, score, regions = inference_service.anomaly_reference(
             cropped,
             reference_cropped,
@@ -149,7 +146,7 @@ async def anomaly(
         return {
             "model_id": selected,
             "roi": roi_value,
-            "roi_points": roi_points(roi_value),
+            "roi_points": roi_points_from_xywh(roi_value),
             "anomaly_score": score,
             "regions": regions,
         }
@@ -165,30 +162,17 @@ async def inference_stream(
     conf: float = Query(default=0.25, ge=0.0, le=1.0),
     iou: float = Query(default=0.45, ge=0.0, le=1.0),
     infer_every_n_frames: int = Query(default=3, ge=1, le=120),
-    inference_timeout_s: float = Query(default=INFERENCE_TIMEOUT_S, gt=0, le=5.0),
-    roi: str | None = Query(default=None),
-    x1: int | None = Query(default=None),
-    y1: int | None = Query(default=None),
-    x2: int | None = Query(default=None),
-    y2: int | None = Query(default=None),
+    x1: float | None = Query(default=None),
+    y1: float | None = Query(default=None),
+    x2: float | None = Query(default=None),
+    y2: float | None = Query(default=None),
+    clamp: bool = Query(default=False),
 ) -> None:
-    # Estado de control de ESTA conexión (ROI activa, update_roi). La ROI de la
-    # URL es solo la inicial; si es inválida no se cierra el socket (ver
-    # StreamControl.set_initial_roi).
-    control = StreamControl()
-    control.set_initial_roi(roi, x1, y1, x2, y2)
-
-    def infer(frame, active_roi) -> list[dict]:
-        # La captura entrega el frame completo; la ROI se aplica solo aquí.
-        height, width = frame.shape[:2]
-        if active_roi is None:
-            cropped, offset = frame, (0, 0)
-        else:
-            ax1, ay1, ax2, ay2 = active_roi
-            try:
-                cropped, _, offset = resolve_roi_request(frame, None, ax1, ay1, ax2, ay2)
-            except ImageInputError as exc:
-                raise RoiOutOfFrame(str(exc)) from exc
+    def infer(frame) -> list[dict]:
+        # La captura entrega el frame completo; el ROI se valida y aplica aquí.
+        # Un ROI inválido lanza ROIValidationError, que el stream_runner traduce
+        # en un aviso al cliente sin cerrar la conexión (contrato de ROI).
+        cropped, _, offset = resolve_roi_absolute(frame, x1, y1, x2, y2, clamp=clamp)
         _, detections = inference_service.localize(cropped, model_id, conf, iou, offset)
         # Coordenadas absolutas del frame original, recortadas a sus límites.
         return normalize_detections(detections, width, height)
