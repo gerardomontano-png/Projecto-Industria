@@ -66,7 +66,7 @@ stateDiagram-v2
 
 Es la misma regla de todo el sistema: la base guarda la fuente pública y solo el *nombre* del secreto. El servicio la hace cumplir en las dos direcciones:
 
-- **Al entrar:** `register` y `update` rechazan con `SourceValidationError` cualquier fuente que traiga usuario y contraseña (`rtsp://admin:clave@...`) o un parámetro sensible (`?password=...`, `?token=...`), y cualquier `credential_ref` que parezca una credencial en vez de un nombre.
+- **Al entrar:** `register` y `update` rechazan con `SourceValidationError` cualquier fuente que traiga usuario y contraseña (`rtsp://USUARIO:CLAVE@...`) o un parámetro sensible (`?password=...`, `?token=...`), y cualquier `credential_ref` que parezca una credencial en vez de un nombre.
 - **Al salir:** la vista pública `SourceRead` expone `has_credentials` (un booleano) y `credential_ref` (un nombre), nunca un secreto. Una prueba recorre todas las respuestas del servicio y la propia fila de la base para confirmar que una contraseña de prueba no aparece en ninguna parte.
 
 ## Pruebas

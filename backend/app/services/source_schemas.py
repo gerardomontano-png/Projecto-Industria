@@ -20,14 +20,11 @@ from typing import Any, Optional
 
 from app.db.models import Camera, CameraStatus, SourceType
 
-# Credenciales dentro de una URL o de un parámetro
-_USERINFO = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^/\s@]+@")
-_SENSITIVE_QUERY = re.compile(
-    r"[?&][a-zA-Z0-9_\-]*(pass(word|wd)?|pwd|token|secret|api[_-]?key|auth|credential|user(name)?)"
-    r"[a-zA-Z0-9_\-]*=[^&\s]+",
-    re.IGNORECASE,
+from app.services.credential_guard import (
+    contains_credentials,
+    is_valid_credential_ref,
 )
-_CREDENTIAL_REF = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+
 _RTSP = re.compile(r"^rtsps?://", re.IGNORECASE)
 
 
@@ -59,7 +56,7 @@ UNSET = _Unset()
 
 
 def _check_no_credentials(field: str, value: Any) -> None:
-    if isinstance(value, str) and (_USERINFO.search(value) or _SENSITIVE_QUERY.search(value)):
+    if contains_credentials(value):
         raise SourceValidationError(
             field,
             "La fuente no debe incluir usuario ni contraseña. Guarda la URL pública "
@@ -88,7 +85,7 @@ def _validate_credential_ref(value: Optional[str]) -> Optional[str]:
     value = value.strip()
     if not value:
         return None
-    if not _CREDENTIAL_REF.match(value):
+    if not is_valid_credential_ref(value):
         raise SourceValidationError(
             "credential_ref",
             "credential_ref es el NOMBRE de un secreto en mayúsculas (p. ej. "

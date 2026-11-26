@@ -236,7 +236,7 @@ Las cámaras IP suelen llevar usuario y contraseña en la URL. El modelo separa 
 
 Los campos destinados a respuesta o historial (`source`, `parameters`, `error_message` y `attributes`) pasan por un detector que rechaza con `CredentialLeakError`, antes de llegar a la base:
 
-- usuario o contraseña dentro de una URL (`rtsp://admin:clave@...`);
+- usuario o contraseña dentro de una URL (`rtsp://USUARIO:CLAVE@...`);
 - parámetros sensibles en una URL (`?password=...`, `?token=...`);
 - campos JSON cuyo nombre indica una credencial (`password`, `token`, `secret`, `api_key`, `auth`...) y que contienen texto. Un número, como `"token_count": 3`, no se considera credencial.
 
