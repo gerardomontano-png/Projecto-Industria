@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import (
@@ -32,6 +32,11 @@ from app.db.models import (
     DetectionEvent,
     ProcessingRun,
 )
+from app.services.dedup_policy import (
+    DedupConfig,
+    DedupPolicy,
+    DetectionKey,
+)
 from app.services.detection_schemas import (
     DetectionEventInput,
     DetectionEventRead,
@@ -39,6 +44,23 @@ from app.services.detection_schemas import (
     EventPage,
     EventQuery,
 )
+from app.services.query_pagination import (
+    SortDirection,
+    SortField,
+    SortOrder,
+    decode_cursor,
+    encode_cursor,
+)
+
+# Campos por los que se permite ordenar los eventos (lista blanca de J05).
+# captured_at es el orden natural de un historial; el id desempata y es único.
+_SORT_FIELDS: dict[str, SortField] = {
+    "captured_at": SortField("captured_at", DetectionEvent.captured_at),
+    "processed_at": SortField("processed_at", DetectionEvent.processed_at),
+    "frame_seq": SortField("frame_seq", DetectionEvent.frame_seq),
+    "id": SortField("id", DetectionEvent.id, is_unique=True),
+}
+_DEFAULT_SORT = SortOrder(_SORT_FIELDS["captured_at"], SortDirection.DESC)
 
 
 class DetectionStoreError(Exception):
@@ -56,18 +78,28 @@ class DuplicateEventError(DetectionStoreError):
 
 
 class DetectionStoreService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        dedup: Optional[DedupPolicy] = None,
+    ) -> None:
         self.session = session
+        # Si no se pasa política, se usa una con los valores por defecto. Para
+        # desactivar la deduplicación: DedupPolicy(DedupConfig(enabled=False)).
+        self.dedup = dedup if dedup is not None else DedupPolicy()
 
     # ── Guardar ──────────────────────────────────────────────────────────────
 
     def save_event(self, data: DetectionEventInput) -> DetectionEventRead:
         """
-        Guarda un evento con sus detecciones.
+        Guarda un evento con sus detecciones, aplicando la política de
+        deduplicación (J06) a cada detección.
 
-        Valida el evento contra el modelo aprobado, resuelve la cámara desde la
-        corrida (para no confiar en un camera_id enviado por fuera) y rechaza un
-        segundo evento para el mismo frame de la misma corrida.
+        Las detecciones que son duplicados recientes de otra ya registrada (misma
+        cámara, misma clase/etiqueta y caja solapada dentro de la ventana) se
+        omiten; las distintas se guardan. El evento se guarda siempre, aunque
+        todas sus detecciones resulten duplicadas: eso deja constancia de que el
+        frame se procesó, que es distinto de no haberlo procesado.
 
         Raises:
             DetectionValidationError: el evento o una detección es inválido.
@@ -91,6 +123,17 @@ class DetectionStoreService:
                 f"Ya hay un evento para el frame {clean.frame_seq} de la corrida."
             )
 
+        # Política de deduplicación: se queda solo con las detecciones nuevas
+        ts = clean.captured_at.timestamp()
+        unicas = []
+        for d in clean.detections:
+            key = DetectionKey(
+                camera_id=run.camera_id, class_id=d.class_id, label=d.label,
+                box=(d.x1, d.y1, d.x2, d.y2),
+            )
+            if not self.dedup.is_duplicate(key, ts):
+                unicas.append(d)
+
         event = DetectionEvent(
             run_id=clean.run_id,
             camera_id=run.camera_id,  # la cámara se toma de la corrida, no del input
@@ -100,7 +143,7 @@ class DetectionStoreService:
             frame_width=clean.frame_width,
             frame_height=clean.frame_height,
             roi=clean.roi,
-            detections=[d.to_model() for d in clean.detections],
+            detections=[d.to_model() for d in unicas],
         )
         self.session.add(event)
         self.session.flush()
@@ -117,28 +160,65 @@ class DetectionStoreService:
           - label, class_id, min_confidence: el evento aparece si tiene al menos
             una detección que cumple.
 
-        Cada evento devuelto trae TODAS sus detecciones, no solo las que pasaron
-        el filtro, para no dar una imagen incompleta del frame. Los resultados se
-        ordenan por fecha de captura descendente y se paginan con limit/offset.
+        Paginación (J05): por offset, o por cursor estable si se envía uno. El
+        orden se elige con sort_by/sort_dir entre una lista blanca; por defecto,
+        fecha de captura descendente. Cada evento devuelto trae TODAS sus
+        detecciones, no solo las que pasaron el filtro.
         """
-        clean = q.validated()
-        base = self._apply_filters(select(DetectionEvent), clean)
+        from app.services.query_pagination import resolve_sort
 
+        clean = q.validated()
+        order = resolve_sort(clean.sort_by, clean.sort_dir, _SORT_FIELDS, _DEFAULT_SORT)
+
+        base = self._apply_filters(select(DetectionEvent), clean)
         total = self.session.scalar(
             self._apply_filters(select(func.count(DetectionEvent.id.distinct())), clean)
         ) or 0
 
-        stmt = (
-            base.order_by(DetectionEvent.captured_at.desc(), DetectionEvent.id)
-            .offset(clean.offset)
-            .limit(clean.limit)
-            .options(selectinload(DetectionEvent.detections))
-        )
+        # Orden: el campo pedido y, para desempatar de forma estable, el id.
+        col = order.field.column
+        tie = DetectionEvent.id
+        if order.direction == SortDirection.DESC:
+            order_by = [col.desc(), tie.desc()]
+        else:
+            order_by = [col.asc(), tie.asc()]
+
+        stmt = self._apply_filters(select(DetectionEvent), clean)
+
+        usa_cursor = clean.cursor is not None
+        if usa_cursor:
+            # Paginación por cursor: "sigue después de esta posición exacta".
+            sort_value, last_id = decode_cursor(clean.cursor)
+            stmt = stmt.where(self._after_cursor(order, sort_value, last_id))
+            stmt = stmt.order_by(*order_by).limit(clean.limit)
+        else:
+            stmt = stmt.order_by(*order_by).offset(clean.offset).limit(clean.limit)
+
+        stmt = stmt.options(selectinload(DetectionEvent.detections))
         eventos = list(self.session.scalars(stmt).unique())
+
+        # next_cursor se ofrece siempre que la página se llenó y hay más por venir:
+        # permite pasar a la paginación estable por cursor desde cualquier punto.
+        hay_mas = (clean.offset + len(eventos)) < total if not usa_cursor else len(eventos) == clean.limit
+        next_cursor = None
+        if hay_mas and eventos:
+            ultimo = eventos[-1]
+            next_cursor = encode_cursor(getattr(ultimo, order.field.name), ultimo.id)
+
         return EventPage(
             events=[DetectionEventRead.from_model(e) for e in eventos],
             total=total, limit=clean.limit, offset=clean.offset,
+            next_cursor=next_cursor,
+            sort_by=order.field.name, sort_dir=order.direction.value,
         )
+
+    def _after_cursor(self, order: SortOrder, sort_value, last_id: str):
+        """Condición 'después del cursor', respetando el orden y desempatando por id."""
+        col = order.field.column
+        if order.direction == SortDirection.DESC:
+            # Orden descendente: lo siguiente es MENOR, o igual con id menor
+            return or_(col < sort_value, and_(col == sort_value, DetectionEvent.id < last_id))
+        return or_(col > sort_value, and_(col == sort_value, DetectionEvent.id > last_id))
 
     def get_event(self, event_id: str) -> Optional[DetectionEventRead]:
         ev = self.session.get(DetectionEvent, event_id)
