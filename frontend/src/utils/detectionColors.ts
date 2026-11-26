@@ -44,15 +44,30 @@ export function labelTextColor(background: string): string {
   return luminance > 0.6 ? '#1f2430' : '#fff';
 }
 
-/** Devuelve el color según el nivel de confidence configurado por el usuario */
+/**
+ * Devuelve el color según el nivel de confidence configurado por el usuario.
+ *
+ * Los niveles "≥" se evalúan del umbral más alto al más bajo. Todo lo que queda
+ * por debajo del "≥" más bajo toma el color del nivel "≤" (el más bajo), así
+ * ninguna detección se queda sin color aunque los umbrales dejen un hueco
+ * (p. ej. Media ≥ 50 y Baja ≤ 30 dejaban 31–49 % en gris).
+ */
 export function colorForConfidence(
   confidence: number,
   levels: AccuracyLevel[]
 ): string {
+  if (levels.length === 0) return UNKNOWN_CLASS_COLOR;
   const score = confidence * 100;
-  for (const level of levels) {
-    if (level.operator === '>=' && score >= level.threshold) return level.color;
-    if (level.operator === '<=' && score <= level.threshold) return level.color;
-  }
-  return UNKNOWN_CLASS_COLOR;
+
+  const atLeast = levels
+    .filter((level) => level.operator === '>=')
+    .sort((a, b) => b.threshold - a.threshold);
+  const match = atLeast.find((level) => score >= level.threshold);
+  if (match) return match.color;
+
+  const atMost = levels
+    .filter((level) => level.operator === '<=')
+    .sort((a, b) => a.threshold - b.threshold);
+  const lowest = atMost.find((level) => score <= level.threshold) ?? atMost[atMost.length - 1];
+  return (lowest ?? atLeast[atLeast.length - 1]).color;
 }

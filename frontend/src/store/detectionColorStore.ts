@@ -10,7 +10,7 @@ export interface AccuracyLevel {
 
 const DEFAULT_LEVELS: AccuracyLevel[] = [
   { label: 'Alta',  color: '#B4D678', threshold: 70, operator: '>=' },
-  { label: 'Media', color: '#A3C2DF', threshold: 50, operator: '>=' },
+  { label: 'Media', color: '#A3C2DF', threshold: 31, operator: '>=' },
   { label: 'Baja',  color: '#BD7066', threshold: 30, operator: '<=' },
 ];
 
@@ -31,19 +31,25 @@ export const useDetectionColorStore = create<DetectionColorState>()(
     {
       name: 'detection-color-store',
       storage: createJSONStorage(() => localStorage),
+      version: 1,
+      migrate: migrateLevels,
     }
   )
 );
 
-/** Devuelve el color que corresponde a un confidence score (0-1) según los niveles configurados */
-export function colorForConfidence(
-  confidence: number,
-  levels: AccuracyLevel[]
-): string {
-  const score = confidence * 100;
-  for (const level of levels) {
-    if (level.operator === '>=' && score >= level.threshold) return level.color;
-    if (level.operator === '<=' && score <= level.threshold) return level.color;
-  }
-  return '#6b7280'; // fallback
+/**
+ * v0 guardaba Media ≥ 50, que junto con Baja ≤ 30 dejaba 31–49 % sin nivel.
+ * Si el usuario no había cambiado ese umbral, se lleva al valor diseñado (31).
+ */
+export function migrateLevels(persisted: unknown, version: number): { levels: AccuracyLevel[] } {
+  const state = persisted as { levels?: AccuracyLevel[] } | undefined;
+  const levels = state?.levels ?? DEFAULT_LEVELS;
+  if (version >= 1) return { levels };
+  return {
+    levels: levels.map((level) =>
+      level.label === 'Media' && level.operator === '>=' && level.threshold === 50
+        ? { ...level, threshold: 31 }
+        : level
+    ),
+  };
 }
