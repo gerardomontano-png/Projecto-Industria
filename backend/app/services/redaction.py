@@ -24,8 +24,7 @@ _SENSITIVE_PARAM = re.compile(
 )
 
 # "esquema://usuario:clave@" o "esquema://usuario@" en cualquier texto
-_USERINFO_IN_TEXT = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/\s@'\"]+@")
-
+_USERINFO_IN_TEXT = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/\s'\"]+@")
 # "?token=valor" o "&password=valor" en cualquier texto
 _SENSITIVE_PARAM_IN_TEXT = re.compile(
     r"(?P<prefix>[?&](?:[a-zA-Z0-9_]*?)"
