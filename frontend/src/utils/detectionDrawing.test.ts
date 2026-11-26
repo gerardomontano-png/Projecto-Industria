@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalizationDetection } from '../types';
-import { colorForClass } from './detectionColors';
+import type { AccuracyLevel } from '../store/detectionColorStore';
+import { colorForClass, colorForConfidence } from './detectionColors';
 import { clearDetections, redrawDetections } from './detectionDrawing';
 
 type Call = [method: string, ...args: number[]];
@@ -9,6 +10,7 @@ type Call = [method: string, ...args: number[]];
 function createCanvas() {
   const calls: Call[] = [];
   const strokeColors: string[] = [];
+  const fillColors: string[] = [];
   const ctx = {
     font: '',
     lineWidth: 0,
@@ -20,7 +22,10 @@ function createCanvas() {
       calls.push(['strokeRect', ...args]);
       strokeColors.push(this.strokeStyle);
     },
-    fillRect: (...args: number[]) => calls.push(['fillRect', ...args]),
+    fillRect(...args: number[]) {
+      calls.push(['fillRect', ...args]);
+      fillColors.push(this.fillStyle);
+    },
     fillText: () => calls.push(['fillText']),
     measureText: () => ({ width: 40 }),
   };
@@ -30,6 +35,7 @@ function createCanvas() {
     canvas: canvas as unknown as HTMLCanvasElement,
     calls,
     strokeColors,
+    fillColors,
     strokes: () => calls.filter(([method]) => method === 'strokeRect'),
   };
 }
@@ -64,6 +70,31 @@ describe('redrawDetections', () => {
       ['strokeRect', 160, 0, 960, 720],
     ]);
     expect(strokeColors).toEqual([colorForClass(0), colorForClass(2)]);
+  });
+
+  it('con niveles de confianza, la caja conserva el color de su clase', () => {
+    const levels: AccuracyLevel[] = [
+      { label: 'Alta', color: '#B4D678', threshold: 70, operator: '>=' },
+      { label: 'Media', color: '#A3C2DF', threshold: 31, operator: '>=' },
+      { label: 'Baja', color: '#BD7066', threshold: 30, operator: '<=' },
+    ];
+    const { canvas, strokeColors, fillColors } = createCanvas();
+    const detections: LocalizationDetection[] = [
+      { ...detection(0, 100, 100, 200, 200), confidence: 0.9 },
+      { ...detection(3, 300, 100, 400, 200), confidence: 0.9 },
+      { ...detection(3, 0, 300, 100, 400), confidence: 0.4 },
+    ];
+
+    redrawDetections(canvas, detections, FRAME, DISPLAY, null, levels);
+
+    // Cajas: una clase, un color, sin importar la confianza.
+    expect(strokeColors).toEqual([colorForClass(0), colorForClass(3), colorForClass(3)]);
+    // Etiquetas: el color del nivel de confianza de cada detección.
+    expect(fillColors).toEqual([
+      colorForConfidence(0.9, levels),
+      colorForConfidence(0.9, levels),
+      colorForConfidence(0.4, levels),
+    ]);
   });
 
   it('limpia la capa antes de dibujar las cajas del frame', () => {

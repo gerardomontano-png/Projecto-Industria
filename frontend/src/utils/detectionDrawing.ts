@@ -66,12 +66,15 @@ export function redrawDetections(
     const rect = bboxToCanvas(det.bbox, transform, fit);
     if (!rect) continue;
 
-    const color = accuracyLevels
+    // La caja identifica la clase: cada clase conserva su color en todos los frames.
+    const classColor = colorForClass(det.classId);
+    // La etiqueta (donde va el %) muestra el nivel de confianza configurado, si lo hay.
+    const labelColor = accuracyLevels
       ? colorForConfidence(det.confidence, accuracyLevels)
-      : colorForClass(det.classId);
+      : classColor;
 
     // Caja de la detección
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = classColor;
     ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
 
     // Etiqueta: clase + % de confianza
@@ -80,9 +83,9 @@ export function redrawDetections(
     // Si no cabe encima de la caja, se dibuja por dentro; nunca se sale por la derecha
     const ly = rect.y - LABEL_HEIGHT >= fit.dy ? rect.y - LABEL_HEIGHT : rect.y;
     const lx = Math.max(fit.dx, Math.min(rect.x, fit.dx + fit.dw - tw));
-    ctx.fillStyle = color;
+    ctx.fillStyle = labelColor;
     ctx.fillRect(lx, ly, tw, LABEL_HEIGHT);
-    ctx.fillStyle = labelTextColor(color);
+    ctx.fillStyle = labelTextColor(labelColor);
     ctx.fillText(label, lx + 3, ly + LABEL_HEIGHT - 4);
   }
 }
