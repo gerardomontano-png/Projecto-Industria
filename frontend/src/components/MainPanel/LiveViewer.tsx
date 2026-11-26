@@ -8,7 +8,6 @@ import { nextSnapshot, type Snapshot } from '../../utils/roiSnapshot';
 import { ButtonCommon } from '../CommonComponents';
 import { ROICanvas } from './ROICanvas';
 import { TopBar } from '../Toolbar';
-import { ROICoordinatesPanel } from './ROICoordinatesPanel';
 import { MenuOptions } from './MenuOptions';
 import { DetectionCanvas } from './DetectionCanvas';
 import { StreamSessionNotice } from './StreamSessionNotice';
@@ -33,28 +32,12 @@ interface LiveViewerProps {
   activeItem: string | null;
 }
 
-const SELECT_CLASS =
-  'shrink-0 h-8 px-2 rounded-lg border border-[#e2e5ea] bg-white text-[13px] text-[#393939] cursor-pointer focus:outline-[2px] focus:outline-[#2f6fe4] focus:outline-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
-
-const TASK_LABELS: Record<string, string> = {
-  localization: 'Detección YOLO',
-  classification: 'Clasificación',
-  ocr: 'OCR',
-  anomaly: 'Anomalías',
-};
-
 export function LiveViewer({
   camera,
   cameraId,
   job,
   onToggleInspection,
   models,
-  isLoadingModels,
-  effectiveModelId,
-  onModelChange,
-  selectedCameraId,
-  apiCameras,
-  onCameraChange,
   naturalWidth,
   naturalHeight,
   activeItem,

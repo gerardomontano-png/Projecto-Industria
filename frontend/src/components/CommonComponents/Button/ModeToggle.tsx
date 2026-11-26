@@ -1,7 +1,12 @@
+import type { Dispatch, SetStateAction } from "react";
 import { Moon, Sun } from "lucide-react";
 
+interface ModeToggleProps {
+    isDarkMode: boolean;
+    setIsDarkMode: Dispatch<SetStateAction<boolean>>;
+}
 
-const ModeToggle = ({isDarkMode, setIsDarkMode}) => {
+const ModeToggle = ({isDarkMode, setIsDarkMode}: ModeToggleProps) => {
     return (
         <label className="flex h-[34px] items-center cursor-pointer">
             <input className="h-0 w-0" type="checkbox" checked={isDarkMode} onChange={() => setIsDarkMode((prev) => !prev)}>
