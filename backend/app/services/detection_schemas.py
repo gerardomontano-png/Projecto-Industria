@@ -23,6 +23,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.db.models import Detection, DetectionEvent
+from app.services.query_pagination import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    PaginationError,
+    normalize_limit,
+    normalize_offset,
+)
 
 
 class DetectionValidationError(ValueError):
@@ -125,7 +132,11 @@ class DetectionEventInput:
 
 @dataclass
 class EventQuery:
-    """Filtros para consultar eventos. Todos son opcionales y se combinan con Y."""
+    """
+    Filtros para consultar eventos. Todos los filtros son opcionales y se
+    combinan con Y. La paginación, el ordenamiento y los límites se validan
+    con el módulo query_pagination (J05).
+    """
 
     camera_id: Optional[str] = None
     run_id: Optional[str] = None
@@ -134,8 +145,14 @@ class EventQuery:
     min_confidence: Optional[float] = None
     start: Optional[datetime] = None          # inclusivo
     end: Optional[datetime] = None            # exclusivo
-    limit: int = 100
-    offset: int = 0
+    # Paginación: por offset (clásica) o por cursor (estable). Si se da cursor,
+    # se ignora offset.
+    limit: Optional[int] = None               # None → DEFAULT_PAGE_SIZE
+    offset: Optional[int] = None              # None → 0
+    cursor: Optional[str] = None
+    # Ordenamiento: campo público y dirección. None → el orden por defecto.
+    sort_by: Optional[str] = None
+    sort_dir: Optional[str] = None
 
     def validated(self) -> "EventQuery":
         if self.min_confidence is not None and not (0.0 <= self.min_confidence <= 1.0):
@@ -144,14 +161,14 @@ class EventQuery:
         end = _require_aware("end", self.end) if self.end is not None else None
         if start is not None and end is not None and end <= start:
             raise DetectionValidationError("period", "El fin del periodo debe ser posterior al inicio.")
-        if not (1 <= self.limit <= 1000):
-            raise DetectionValidationError("limit", "limit debe estar entre 1 y 1000.")
-        if self.offset < 0:
-            raise DetectionValidationError("offset", "offset no puede ser negativo.")
+        # Los límites se centralizan en J05: aquí solo se normalizan
+        limit = normalize_limit(self.limit)
+        offset = 0 if self.cursor is not None else normalize_offset(self.offset)
         return EventQuery(
             camera_id=self.camera_id, run_id=self.run_id, label=self.label,
             class_id=self.class_id, min_confidence=self.min_confidence,
-            start=start, end=end, limit=self.limit, offset=self.offset,
+            start=start, end=end, limit=limit, offset=offset, cursor=self.cursor,
+            sort_by=self.sort_by, sort_dir=self.sort_dir,
         )
 
     @property
@@ -221,16 +238,19 @@ class DetectionEventRead:
 
 @dataclass
 class EventPage:
-    """Una página de resultados, con lo necesario para pedir la siguiente."""
+    """Una página de eventos, con paginación por offset y por cursor."""
 
     events: list[DetectionEventRead]
     total: int
     limit: int
     offset: int
+    next_cursor: Optional[str] = None
+    sort_by: Optional[str] = None
+    sort_dir: Optional[str] = None
 
     @property
     def has_more(self) -> bool:
-        return self.offset + len(self.events) < self.total
+        return self.next_cursor is not None
 
     def to_dict(self) -> dict:
         return {
@@ -239,4 +259,6 @@ class EventPage:
             "limit": self.limit,
             "offset": self.offset,
             "has_more": self.has_more,
+            "next_cursor": self.next_cursor,
+            "sort": {"by": self.sort_by, "dir": self.sort_dir},
         }

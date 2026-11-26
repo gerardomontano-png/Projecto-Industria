@@ -257,19 +257,10 @@ def test_c2_filtro_sin_resultados(svc, datos):
     assert page.total == 0 and page.events == [] and page.has_more is False
 
 
-@pytest.mark.parametrize(
-    "cambios, campo",
-    [
-        ({"min_confidence": 1.5}, "min_confidence"),
-        ({"limit": 0}, "limit"),
-        ({"limit": 5000}, "limit"),
-        ({"offset": -1}, "offset"),
-    ],
-)
-def test_c2_parametros_de_consulta_invalidos(svc, cambios, campo):
+def test_c2_confianza_de_filtro_invalida(svc):
     with pytest.raises(DetectionValidationError) as info:
-        svc.query(EventQuery(**cambios))
-    assert info.value.field == campo
+        svc.query(EventQuery(min_confidence=1.5))
+    assert info.value.field == "min_confidence"
 
 
 def test_c2_periodo_invertido_se_rechaza(svc):
