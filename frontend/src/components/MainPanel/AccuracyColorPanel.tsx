@@ -3,18 +3,6 @@ import { Pencil } from 'lucide-react';
 import { ColorPickerPopup } from '../Toolbar/ColorPickerPopup';
 import { useDetectionColorStore } from '../../store/detectionColorStore';
 
-interface AccuracyLevel {
-  label: string;
-  color: string;
-  threshold: number;
-}
-
-const DEFAULT_LEVELS: AccuracyLevel[] = [
-  { label: 'Alta',  color: '#B4D678', threshold: 70, operator: '≥' },
-  { label: 'Media', color: '#A3C2DF', threshold: 31, operator: '≥' },
-  { label: 'Baja',  color: '#BD7066', threshold: 30, operator: '≤' },
-];
-
 export function AccuracyColorPanel() {
   const { levels, updateLevel } = useDetectionColorStore();
   const [editingIndex, setEditingIndex] = useState<number | null>(null);

@@ -79,7 +79,7 @@ export function LeftSideBar({
                 ) : (
                   <span className="w-3.5 shrink-0" />
                 )}
-                <Icon size={15} className="shrink-0 text-[#6b7280] dark:text-white" />
+                <Icon />
                 {label}
               </button>
 

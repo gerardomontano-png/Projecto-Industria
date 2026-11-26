@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { Camera, CameraProtocol, ROI } from '../../types/index';
-import { getCameras, type ApiCamera } from '../../services/cameraApi';
+import type { Camera, CameraProtocol } from '../../types/index';
+import { type ApiCamera } from '../../services/cameraApi';
 import { useCameraSignal } from '../../hooks/useCameraSignal';
 import { useModels } from '../../hooks/useModels';
 import { LeftSideBar } from './LeftSidebar';
@@ -59,14 +59,9 @@ function apiCameraToCamera(apiCam: ApiCamera, status: Camera['status']): Camera 
   };
 }
 
-const SELECT_CLASS =
-  'shrink-0 h-8 px-2 rounded-lg border border-[#e2e5ea] bg-white text-[13px] text-[#393939] cursor-pointer focus:outline-[2px] focus:outline-[#2f6fe4] focus:outline-offset-1 disabled:opacity-50 disabled:cursor-not-allowed';
-
 function MainPanel() {
   const [selectedCameraId, setSelectedCameraId] = useState('0');
-  const [apiCameras, setApiCameras] = useState<ApiCamera[]>([]);
-  const [noCamerasDetected, setNoCamerasDetected] = useState(false);
-  const [camerasMessage, setCamerasMessage] = useState<string | null>(null);
+  const [apiCameras] = useState<ApiCamera[]>([]);
   const [activeItem, setActiveItem] = useState<string | null>(null);
 
   const { models, isLoading: isLoadingModels } = useModels();
@@ -152,9 +147,6 @@ function MainPanel() {
         <LeftSideBar
           activeItem = {activeItem}
           setActiveItem = {setActiveItem}
-          cameraId={effectiveCameraId}
-          naturalWidth={camera.resolution.width}
-          naturalHeight={camera.resolution.height}
         />
         <LiveViewer
           activeItem = {activeItem}

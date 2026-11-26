@@ -4,8 +4,6 @@ import MainPanel from './components/MainPanel/MainPanel';
 import { InferencePanel } from './components/InferencePanel/InferencePanel';
 import { Toaster } from './components/CommonComponents/Toast/Toaster';
 import './App.css';
-import { Moon, Sun } from 'lucide-react';
-import ModeToggle from './components/CommonComponents/Button/ModeToggle';
 
 function App() {
   const [view, setView] = useState<AppView>('monitor');

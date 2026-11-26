@@ -7,25 +7,16 @@ import type { Camera, Model } from '../../types/index';
 import { connectionBadge, useInferenceConnectionStore } from '../../store/inferenceConnectionStore';
 
 interface TopBarProps {
-  title: string;
+  title?: string;
   onSettings?: () => void;
   /** Ya no se usa: el estado sale del store de conexión WS (T-035) */
   status?: CameraConnectionStatus;
   cameraName?: string;
   rightSlot?: ReactNode;
-  camera: Camera;
-  model: Model;
+  camera?: Camera;
+  model?: Model;
   job: Job;
   onToggleInspection: () => void;
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-2 py-1.5 border-b border-[#f1f2f4] text-[13px]">
-      <span className="text-[#6b7280]">{label}</span>
-      <span className="font-semibold text-right">{value}</span>
-    </div>
-  );
 }
 
 /**

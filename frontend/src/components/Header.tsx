@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import { ButtonCommon } from "./CommonComponents";
 import ModeToggle from "./CommonComponents/Button/ModeToggle";
 import { Basic, FlechaRegresar} from "./CommonComponents/Icons/IconCommon";

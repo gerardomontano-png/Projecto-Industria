@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X, Check } from 'lucide-react';
-import { CheckIcon, DeleteX, DeleteXMenu } from '../CommonComponents/Icons/IconCommon';
+import { Check } from 'lucide-react';
+import { DeleteXMenu } from '../CommonComponents/Icons/IconCommon';
 import { ButtonCommon } from '../CommonComponents';
 
 const PALETTE = [

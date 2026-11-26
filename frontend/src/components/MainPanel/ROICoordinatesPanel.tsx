@@ -17,10 +17,6 @@ export function ROICoordinatesPanel({
   const allRois = useROIStore(s => s.rois);           // referencia estable
   const rois    = allRois.filter(r => r.cameraId === cameraId);  // fuera del store
   const selectedId = useROIStore(s => s.selectedId);
-  const undo = useROIStore(s => s.undo);
-  const redo = useROIStore(s => s.redo);
-  const canUndo = useROIStore(s => s.past.length > 0);
-  const canRedo = useROIStore(s => s.future.length > 0);
   const deleteROI = useROIStore(s => s.deleteRoi);
 
   return (
@@ -35,7 +31,7 @@ export function ROICoordinatesPanel({
 
 
       {rois.length != 0 && (
-        <table class="table-fixed text-[10px] text-[#BFBFBF] text-center font-semibold ">
+        <table className="table-fixed text-[10px] text-[#BFBFBF] text-center font-semibold ">
            <colgroup>
             <col className="w-[5%]" />
             <col className="w-[5%]" />
@@ -63,7 +59,7 @@ export function ROICoordinatesPanel({
 
         return (
           <div key={roi.id} className={`${isSelected ? 'bg-[#F7F7F7] rounded-md border-none dark:bg-[#404040]' : 'border-none'}`}>
-            <table class="table-fixed text-[9px] justify-center">
+            <table className="table-fixed text-[9px] justify-center">
               <colgroup>
                 <col className="w-[5%]" />
                 <col className="w-[5%]" />
