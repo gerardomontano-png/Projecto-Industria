@@ -12,8 +12,10 @@ from app.schemas.inference import (
 from app.services.camera_session_manager import camera_session_manager
 from app.services.image_service import ImageInputError, decode_image
 from app.services.inference_service import InferenceError, inference_service
+from app.services.detections import normalize_detections
 from app.services.model_registry import ModelRegistryError
-from app.services.stream_runner import serve_camera_stream
+from app.services.stream_control import RoiOutOfFrame, StreamControl
+from app.services.stream_runner import INFERENCE_TIMEOUT_S, serve_camera_stream
 
 from app.services.roi_contract import ROIValidationError
 from app.services.roi_resolver import resolve_roi_absolute, roi_points_from_xywh
@@ -172,7 +174,8 @@ async def inference_stream(
         # en un aviso al cliente sin cerrar la conexión (contrato de ROI).
         cropped, _, offset = resolve_roi_absolute(frame, x1, y1, x2, y2, clamp=clamp)
         _, detections = inference_service.localize(cropped, model_id, conf, iou, offset)
-        return detections
+        # Coordenadas absolutas del frame original, recortadas a sus límites.
+        return normalize_detections(detections, width, height)
 
     await serve_camera_stream(
         websocket,
@@ -181,4 +184,6 @@ async def inference_stream(
         "Cámara detectada. Iniciando inferencia.",
         infer=infer,
         infer_every_n_frames=infer_every_n_frames,
+        inference_timeout_s=inference_timeout_s,
+        control=control,
     )
